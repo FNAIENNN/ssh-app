@@ -1,3 +1,83 @@
+# ssh-app
+
+Simple frontend for harvest/seed management built with Vite + React.
+
+## Quick start
+
+Prereqs: Node.js (16+), npm, git, GitHub account. Optional: `gh` CLI.
+
+Install and run locally:
+
+```
+npm install
+npm run dev
+```
+
+The app entry is `src/main.jsx`. Seed-related code lives under `src/features/seed`.
+
+## Git & collaboration (easy steps for your team)
+
+1. Sync `main` before starting work:
+
+   ```bash
+   git checkout main
+   git pull origin main
+   ```
+
+2. Create a feature branch for your work (use descriptive names):
+
+   ```bash
+   git switch -c feat/seed-yourname-short
+   ```
+
+3. Work on files under `src/features/seed` (add new files there).
+
+4. Stage and commit locally often with clear messages:
+
+   ```bash
+   git add path/to/changed-files
+   git commit -m "seed: add <short description>"
+   ```
+
+5. Push the branch and open a Pull Request:
+
+   ```bash
+   git push -u origin feat/seed-yourname-short
+   # then open a PR on GitHub or use gh:
+   gh pr create --fill
+   ```
+
+6. Request reviews, address comments, and when approved, merge into `main`.
+
+7. After merge, update your local `main` and delete the feature branch:
+
+   ```bash
+   git checkout main
+   git pull origin main
+   git push origin --delete feat/seed-yourname-short
+   git branch -d feat/seed-yourname-short
+   ```
+
+## Handling conflicts
+
+- If your branch falls behind, rebase or merge `main` into it before opening a PR:
+
+  ```bash
+  git fetch origin
+  git switch feat/seed-yourname-short
+  git rebase origin/main
+  # or: git merge origin/main
+  ```
+
+- Resolve conflicts in your editor, `git add` the resolved files, then `git rebase --continue` (if rebasing) or commit (if merging).
+
+## Tips for this repo
+
+- Keep seed-specific changes inside `src/features/seed` to avoid unrelated conflicts.
+- Run `npm run dev` and check the UI before opening a PR.
+- Use small, focused PRs so reviewers can review quickly.
+
+If you want, I can also add a `CONTRIBUTING.md` with a PR template and set branch protection rules.
 # SSH — Aquaculture Site & Seed Management Platform
 
 **Brand:** Oryxen · **In-app name:** SSH · **Theme:** Aqua
