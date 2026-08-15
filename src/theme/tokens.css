@@ -1,0 +1,121 @@
+/**
+ * SSH (Oryxen) — Design tokens derived from the Flutter AppTheme.
+ * Single source of truth for all colours, shadows and radii.
+ *
+ * Flutter AppTheme mapping:
+ *   primary        → #1A1A2E   (AppTheme.primary)
+ *   primaryLight   → #2D2D44   (AppTheme.primaryLight)
+ *   accent         → #16213E   (AppTheme.accent)
+ *   highlight      → #E94560   (AppTheme.highlight)
+ *   surface        → #F8F9FC   (AppTheme.surface)
+ *   surfaceCard    → #FFFFFF   (AppTheme.surfaceCard)
+ *   surfaceDark    → #E8ECF2   (AppTheme.surfaceDark)
+ */
+:root {
+  /* ── Brand ─────────────────────────────────────────────────────────── */
+  --color-primary:       #1A1A2E;   /* AppTheme.primary  (deep navy) */
+  --color-primary-light: #2D2D44;   /* AppTheme.primaryLight */
+  --color-accent:        #16213E;   /* AppTheme.accent  (dark navy) */
+  --color-highlight:     #E94560;   /* AppTheme.highlight  (crimson) */
+
+  /* ── Surfaces ───────────────────────────────────────────────────────── */
+  --color-surface:       #F8F9FC;   /* AppTheme.surface */
+  --color-surface-card:  #FFFFFF;   /* AppTheme.surfaceCard */
+  --color-surface-dark:  #E8ECF2;   /* AppTheme.surfaceDark */
+  --color-bg:            #F4F6FC;   /* from main_shell.dart scaffold */
+  --color-header-bg:     #0F3460;   /* from main_shell.dart AppBar */
+  --color-gradient-start:#1976D2;
+  --color-gradient-end:  #0FA37A;
+
+  /* legacy alias kept so old code still compiles */
+  --color-primary-dark:  #16213E;
+
+  /* ── Text ───────────────────────────────────────────────────────────── */
+  --color-text-primary:   #0F172A;  /* AppTheme.textPrimary  (Slate 900) */
+  --color-text-secondary: #334155;  /* AppTheme.textSecondary (Slate 700) */
+  --color-text-muted:     #475569;  /* AppTheme.textMuted    (Slate 600) */
+  --color-text-hint:      #64748B;  /* AppTheme.textHint     (Slate 500) */
+
+  /* ── Borders ────────────────────────────────────────────────────────── */
+  --color-border:        #E5E7EB;   /* AppTheme.border */
+  --color-border-light:  #F0F2F5;   /* AppTheme.borderLight */
+
+  /* ── Status ─────────────────────────────────────────────────────────── */
+  --color-success:       #059669;   /* AppTheme.success */
+  --color-success-bg:    #ECFDF5;   /* AppTheme.successBg */
+  --color-success-light: #10B981;   /* AppTheme.successLight */
+
+  --color-warning:       #D97706;   /* AppTheme.warning */
+  --color-warning-bg:    #FFFBEB;   /* AppTheme.warningBg */
+  --color-warning-light: #F59E0B;   /* AppTheme.warningLight */
+
+  --color-danger:        #DC2626;   /* AppTheme.danger */
+  --color-danger-bg:     #FEF2F2;   /* AppTheme.dangerBg */
+  --color-danger-light:  #EF4444;   /* AppTheme.dangerLight */
+
+  --color-info:          #2563EB;   /* AppTheme.info */
+  --color-info-bg:       #EFF6FF;   /* AppTheme.infoBg */
+  --color-info-light:    #3B82F6;   /* AppTheme.infoLight */
+
+  /* ── Shadows (AppTheme.subtleShadow / mediumShadow / cardShadow) ───── */
+  --shadow-card: 0 2px 12px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.04);
+  --shadow-pop:  0 4px 16px rgba(15, 23, 42, 0.08), 0 8px 30px rgba(15, 23, 42, 0.06);
+
+  /* Glassmorphic card shadow */
+  --shadow-glass: 0 8px 32px rgba(26, 26, 46, 0.18), 0 2px 8px rgba(26, 26, 46, 0.10);
+  --shadow-glass-hover: 0 16px 48px rgba(26, 26, 46, 0.22), 0 4px 12px rgba(26, 26, 46, 0.14);
+
+  /* ── Radii (AppTheme.radius*) ───────────────────────────────────────── */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* ── Layout ─────────────────────────────────────────────────────────── */
+  --header-h: 64px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Inter', 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Thin scrollbars inside data tables / menus */
+.scroll-thin::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgba(26, 26, 46, 0.2);
+  border-radius: 999px;
+}

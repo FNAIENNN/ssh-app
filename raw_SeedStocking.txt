@@ -1,0 +1,89 @@
+Created At: 2026-08-11T10:12:53Z
+Completed At: 2026-08-11T10:12:53Z
+File Path: `file:///home/user/Downloads/ssh-app/ssh-app/src/features/seed/payments/seedStocking/SeedStocking.jsx`
+Total Lines: 590
+Total Bytes: 23641
+Showing lines 200 to 280
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+200: 
+201:     const stockingUpdatePayload = {
+202:       stocking_status: 'completed',
+203:       status: 'Completed',
+204:       van_plan: step1Data,
+205:       stocking_status_data: step2Data,
+206:       outside_workers_data: step3Data,
+207:       updated_at: new Date().toISOString(),
+208:     };
+209: 
+210:     const { error: bErr } = await supabase
+211:       .from(TABLES.bills)
+212:       .update(stockingUpdatePayload)
+213:       .eq('id', activeOrder.id);
+214: 
+215:     if (bErr) {
+216:       toast.error(bErr.message);
+217:       throw bErr;
+218:     }
+219: 
+220:     // Update tanks with stocked seed counts
+221:     if (step2Data) {
+222:       const { data: siteTanks } = await supabase
+223:         .from(TABLES.tanks)
+224:         .select('id, name')
+225:         .eq('site_id', siteId);
+226: 
+227:       let allTankStates = {};
+228:       let allTransfers = [];
+229: 
+230:       const isLegacy = step2Data.tankStates;
+231:       if (isLegacy) {
+232:         allTankStates = step2Data.tankStates;
+233:         allTransfers = step2Data.transfers || [];
+234:       } else {
+235:         Object.values(step2Data).forEach(vData => {
+236:           if (vData?.tankStates) {
+237:             allTankStates = { ...allTankStates, ...vData.tankStates };
+238:           }
+239:           if (vData?.transfers) {
+240:             allTransfers = [...allTransfers, ...vData.transfers];
+241:           }
+242:         });
+243:       }
+244: 
+245:       const aggregatedTanks = aggregateTankStates(allTankStates, allTransfers);
+246: 
+247:       for (const tState of aggregatedTanks) {
+248:         if (tState.status === 'completed' && tState.totalCount > 0) {
+249:           const matchedTank = siteTanks?.find(
+250:             (t) => String(t.name).trim().toLowerCase() === String(tState.tankName).trim().toLowerCase()
+251:           );
+252:           if (matchedTank?.id) {
+253:             await supabase.from(TABLES.tanks).update({
+254:               quantity: tState.totalCount,
+255:               seed_type: activeOrder.seed_type || 'Vannamei',
+256:               hatchery: activeOrder.hatchery || null,
+257:               start_date: new Date().toISOString().slice(0, 10),
+258:               updated_at: new Date().toISOString(),
+259:             }).eq('id', matchedTank.id);
+260:           }
+261:         }
+262:       }
+263:     }
+264: 
+265:     await autosaveBillStep(
+266:       supabase, TABLES, activeOrder.id,
+267:       { status: 'Completed', completion_timestamp: new Date().toISOString() },
+268:       'Bill Completed',
+269:       user?.email
+270:     );
+271: 
+272:     await loadBills();
+273:     toast.success(`✅ Bill ${activeOrder.bill_number} completed!`);
+274:     onStockingCompleted?.();
+275:   }
+276: 
+277:   const orderBill = activeOrder || activeBill;
+278: 
+279:   if (seedMode === 'packing') {
+280:     const selectedTanks = [...(emptyTanks || []), ...(newlyAddedTanks || [])].filter((t) => orderForm?.selectedTankIds?.includes(t.id));
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
