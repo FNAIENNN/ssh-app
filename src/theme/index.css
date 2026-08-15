@@ -326,7 +326,8 @@ input[type='number'] {
 
 /* ─── BILL & REPORT PRINT STYLES ───────────────────────────────────────── */
 @page {
-  margin: 0; /* Strips browser-generated file headers & URL footers */
+  margin: 10mm; /* Clean 10mm margin for printed pages */
+  size: auto;
 }
 
 @media print {
@@ -338,15 +339,25 @@ input[type='number'] {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
   }
 
-  /* Hide everything on the screen by default */
+  /* Hide everything on screen by default */
   body * {
     visibility: hidden;
   }
 
-  /* Then reveal only the target printable element and its descendants */
+  /* Collapse height and margins of hidden elements to prevent blank leading/trailing pages */
+  .print\:hidden {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Reveal target printable element and descendants */
   #printable-bill-document,
   #printable-bill-document *,
   #printable-report-document,
@@ -360,7 +371,7 @@ input[type='number'] {
     visibility: visible !important;
   }
 
-  /* Allow continuous multi-page printing without clipping or fixed positioning traps */
+  /* Position printable elements cleanly starting at top left (0,0) */
   #printable-bill-document,
   #printable-report-document,
   #printable-uasf-document,
@@ -376,9 +387,27 @@ input[type='number'] {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    padding: 1.2cm 1.5cm !important;
+    padding: 0 !important;
     margin: 0 !important;
     display: block !important;
+    float: none !important;
+  }
+
+  /* Strip positioning, margins, and paddings from modal backdrop and dialog containers during print */
+  div:has(> #printable-report-modal-document),
+  div:has(> #printable-seed-exchange-document),
+  .fixed:has(#printable-report-modal-document),
+  .fixed:has(#printable-seed-exchange-document) {
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
   }
 
   /* Always keep photos visible when printing */
@@ -387,8 +416,14 @@ input[type='number'] {
     visibility: visible !important;
   }
 
-  /* Prevent row breaking inside tables across pages */
-  tr, td, th {
-    page-break-inside: avoid;
+  /* Prevent row and table breaking across pages */
+  .table-card-container,
+  #printable-seed-exchange-document table,
+  #printable-report-modal-document table,
+  table, thead, tbody, tfoot, tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
+
+

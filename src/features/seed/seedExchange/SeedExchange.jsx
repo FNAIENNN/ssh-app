@@ -426,10 +426,19 @@ export default function SeedExchange() {
     return newBillRecord;
   };
 
+  // Validation derived states
+  const isTankSelectValid = useMemo(() => {
+    return Boolean(fromTankId && toTankId && expectedQty && Number(expectedQty) > 0);
+  }, [fromTankId, toTankId, expectedQty]);
+
   // ── Step 2 Checklist Handlers ─────────────────────────────────────────
   const visibleChecklistItems = useMemo(() => {
     return checklistItems.filter((item) => item.stage === checklistStage);
   }, [checklistItems, checklistStage]);
+
+  const isChecklistValid = useMemo(() => {
+    return visibleChecklistItems.length > 0 && visibleChecklistItems.every((item) => item.checked);
+  }, [visibleChecklistItems]);
 
   const handleToggleChecklist = (id) => {
     setChecklistItems((prev) =>
@@ -571,14 +580,13 @@ export default function SeedExchange() {
   };
 
   const handleDownloadBillPDF = () => {
-    if (!generatedBill) {
-      handleGenerateBill(false);
-    }
+    const updatedRecord = saveExchangeBillRecord();
+    setGeneratedBill(updatedRecord);
+
     const originalTitle = document.title;
     document.title = '';
     window.print();
     document.title = originalTitle;
-    setTimeout(() => setMainSubTab('reports'), 800);
   };
 
   // ── Worker Payments Handlers ──────────────────────────────────────────
@@ -730,7 +738,7 @@ export default function SeedExchange() {
         <div className="space-y-6">
           
           {/* Section Switcher: 1. Data Entry  |  2. Worker Payments */}
-          <div className="flex items-center gap-3 bg-white rounded-2xl p-3 border border-slate-200 shadow-card">
+          <div className="flex items-center gap-3 bg-white rounded-2xl p-3 border border-slate-200 shadow-card print:hidden">
             <button
               type="button"
               onClick={() => setExchangeSection('dataEntry')}
@@ -761,7 +769,7 @@ export default function SeedExchange() {
           {/* SECTION 1: DATA ENTRY (5 Sub-sections / Steps)                  */}
           {/* ──────────────────────────────────────────────────────────────── */}
           {exchangeSection === 'dataEntry' && (
-            <div className="space-y-6">
+            <div className="space-y-6 print:hidden">
               
               {/* Data Entry Stepper Navigation */}
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-card overflow-x-auto">
@@ -1005,10 +1013,10 @@ export default function SeedExchange() {
                   <div className="flex justify-end pt-4 border-t border-slate-100">
                     <button
                       type="button"
-                      disabled={!fromTankId || !toTankId}
+                      disabled={!isTankSelectValid}
                       onClick={() => setDataEntryStep('checklist')}
                       className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md flex items-center gap-2 ${
-                        fromTankId && toTankId
+                        isTankSelectValid
                           ? 'bg-blue-600 hover:bg-blue-500 text-white'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       }`}
@@ -1136,8 +1144,13 @@ export default function SeedExchange() {
 
                     <button
                       type="button"
+                      disabled={!isChecklistValid}
                       onClick={() => setDataEntryStep('weightEntry')}
-                      className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs rounded-xl shadow-md"
+                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
+                        isChecklistValid
+                          ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
                     >
                       Submit to Weight Entry →
                     </button>
@@ -1438,7 +1451,7 @@ export default function SeedExchange() {
             <div className="space-y-6">
               
               {/* Stepper tabs for Worker Payments */}
-              <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-card flex items-center gap-2">
+              <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-card flex items-center gap-2 print:hidden">
                 <button
                   type="button"
                   onClick={() => setWorkerStep('tankSelection')}
@@ -1470,7 +1483,7 @@ export default function SeedExchange() {
 
               {/* ── WORKER STEP 1: TANK SELECTION ─────────────────────────── */}
               {workerStep === 'tankSelection' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-4">
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-4 print:hidden">
                   <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                     <span>🗄️</span> Select Submitted Seed Exchange Tanks / Bills
                   </h3>
@@ -1536,7 +1549,7 @@ export default function SeedExchange() {
 
               {/* ── WORKER STEP 2: WORKER PAYMENTS & WAGES ───────────────── */}
               {workerStep === 'workerDetails' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6">
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 print:hidden">
                   
                   {/* Supplier Selection & New Supplier Option */}
                   <div className="space-y-4 border-b border-slate-100 pb-4">
@@ -1732,22 +1745,32 @@ export default function SeedExchange() {
                     </div>
 
                     {/* Payment Request Option + Overall View Button */}
-                    <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
                       <button
                         type="button"
-                        onClick={handlePaymentRequestSubmit}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2"
+                        onClick={() => setWorkerStep('tankSelection')}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl self-start sm:self-auto"
                       >
-                        <span>💳 Submit Payment Request to Payments Tab</span>
+                        ← Back to Tank Selection
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setWorkerStep('overallView')}
-                        className="px-6 py-3 bg-blue-700 hover:bg-blue-600 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-2"
-                      >
-                        <span>🧾 Overall View →</span>
-                      </button>
+                      <div className="flex flex-col items-end gap-2.5 w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={handlePaymentRequestSubmit}
+                          className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2"
+                        >
+                          <span>💳 Submit Payment Request to Payments Tab</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setWorkerStep('overallView')}
+                          className="w-full sm:w-auto px-6 py-2.5 bg-blue-700 hover:bg-blue-600 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2"
+                        >
+                          <span>🧾 Overall View →</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1756,52 +1779,6 @@ export default function SeedExchange() {
               {/* ── WORKER STEP 3: OVERALL VIEW (BILL FORMAT) ─────────────── */}
               {workerStep === 'overallView' && (
                 <div className="space-y-6">
-
-                  {/* Requirement 3: Table Visibility Controls in Overall View - Enable & Disable Toggles */}
-                  <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-card flex flex-wrap items-center justify-between gap-3 print:hidden">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-slate-900">⚙️ Bill Table Visibility Controls:</span>
-                      <span className="text-[11px] text-slate-500">(Toggle to show/hide tables in Overall View &amp; PDF Bill)</span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 text-xs font-bold">
-                      <button
-                        type="button"
-                        onClick={() => setEnableWeighmentTableInBill(!enableWeighmentTableInBill)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition flex items-center gap-1.5 ${
-                          enableWeighmentTableInBill
-                            ? 'bg-blue-50 border-blue-300 text-blue-800'
-                            : 'bg-slate-100 border-slate-300 text-slate-500'
-                        }`}
-                      >
-                        <span>{enableWeighmentTableInBill ? '✓ Weighment Table (Enabled)' : '✕ Weighment Table (Disabled)'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setEnableCountTableInBill(!enableCountTableInBill)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition flex items-center gap-1.5 ${
-                          enableCountTableInBill
-                            ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
-                            : 'bg-slate-100 border-slate-300 text-slate-500'
-                        }`}
-                      >
-                        <span>{enableCountTableInBill ? '✓ Count Table (Enabled)' : '✕ Count Table (Disabled)'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setEnableWorkerTableInBill(!enableWorkerTableInBill)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition flex items-center gap-1.5 ${
-                          enableWorkerTableInBill
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                            : 'bg-slate-100 border-slate-300 text-slate-500'
-                        }`}
-                      >
-                        <span>{enableWorkerTableInBill ? '✓ Worker Wages Table (Enabled)' : '✕ Worker Wages Table (Disabled)'}</span>
-                      </button>
-                    </div>
-                  </div>
 
                   {/* Printable Bill Area */}
                   <div id="printable-seed-exchange-document" className="bg-white rounded-3xl p-8 border border-slate-200 shadow-2xl space-y-6 text-slate-800">
@@ -1822,15 +1799,21 @@ export default function SeedExchange() {
                       </div>
                     </div>
 
-                    {/* BEFORE & AFTER SEED EXCHANGE STATUS FOR SELECTED BILLS */}
+                    {/* BEFORE & AFTER SEED EXCHANGE STATUS AND TABLES FOR SELECTED BILLS */}
                     {selectedBillsForView.map((billItem, bIdx) => {
                       const fromBefore = billItem.from_tank_before || { name: billItem.from_tank_name, seed: fromTankInitialSeed, hatchery: 'Vizag Hatchery', doc: fromTankDoc, feed: fromTankInitialFeed };
                       const toBefore = billItem.to_tank_before || { name: billItem.to_tank_name, seed: toTankInitialSeed, hatchery: 'Bhimavaram Hatchery', doc: toTankDoc, feed: toTankInitialFeed };
                       const fromAfter = billItem.from_tank_after || { name: billItem.from_tank_name, seed: fromTankUpdatedSeed, hatchery: 'Vizag Hatchery', doc: fromTankDoc, feed: fromTankUpdatedFeed };
-                      const toAfter = billItem.to_tank_after || { name: billItem.to_tank_name, seed: toTankUpdatedSeed, hatchery: toTankHatcheryDisplay, doc: toTankDoc, feed: toTankUpdatedFeed };
+                      const toAfter = billItem.to_tank_after || { name: billItem.to_tank_after || billItem.to_tank_name, seed: toTankUpdatedSeed, hatchery: toTankHatcheryDisplay, doc: toTankDoc, feed: toTankUpdatedFeed };
+
+                      const wRows = billItem.weighment_rows && billItem.weighment_rows.length > 0 ? billItem.weighment_rows : weighmentRows;
+                      const cRows = billItem.count_rows && billItem.count_rows.length > 0 ? billItem.count_rows : computedCounts;
+                      const totWt = billItem.total_weight_kg ?? grandTotalNetWeight;
+                      const selCount = billItem.selected_count ?? selectedCountValue;
+                      const totPcs = billItem.total_pieces ?? totalExchangedPieces;
 
                       return (
-                        <div key={`status-${billItem.id || bIdx}`} className="space-y-4 pt-2">
+                        <div key={`status-${billItem.id || bIdx}`} className="space-y-4 pt-2 border-b border-slate-200 pb-6 last:border-b-0">
                           <div className="text-center border-b border-slate-100 pb-2">
                             <span className="font-extrabold text-xs text-blue-800 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
                               Exchange Details #{bIdx + 1}: {billItem.from_tank_name} → {billItem.to_tank_name} ({billItem.bill_number})
@@ -1866,8 +1849,110 @@ export default function SeedExchange() {
                             </div>
                           </div>
 
+                          {/* WEIGHMENT TABLE (Between Before & After Cards) */}
+                          <div className={`space-y-2 pt-2 table-card-container break-inside-avoid page-break-inside-avoid ${!enableWeighmentTableInBill ? 'print:hidden' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">⚖️ Weighment Table</h4>
+                              <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 print:hidden select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={enableWeighmentTableInBill}
+                                  onChange={(e) => setEnableWeighmentTableInBill(e.target.checked)}
+                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                />
+                                <span>Enable Table</span>
+                              </label>
+                            </div>
+                            {enableWeighmentTableInBill && (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs text-left">
+                                  <thead className="bg-slate-900 text-white font-extrabold uppercase text-[10px]">
+                                    <tr>
+                                      <th className="p-2.5 w-14 text-center">S.No</th>
+                                      <th className="p-2.5">Gross Weight (KG)</th>
+                                      <th className="p-2.5 text-center">Nets Count</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-medium">
+                                    {wRows.map((r, i) => (
+                                      <tr key={i}>
+                                        <td className="p-2.5 text-center text-slate-500 font-bold">{i + 1}</td>
+                                        <td className="p-2.5 font-mono font-bold">{r.grossKg} KG</td>
+                                        <td className="p-2.5 text-center font-mono">{r.nets || 1} net</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* COUNT TABLE (Between Before & After Cards) */}
+                          <div className={`space-y-2 pt-2 table-card-container break-inside-avoid page-break-inside-avoid ${!enableCountTableInBill ? 'print:hidden' : ''}`}>
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">🔢 Count Table</h4>
+                              <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 print:hidden select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={enableCountTableInBill}
+                                  onChange={(e) => setEnableCountTableInBill(e.target.checked)}
+                                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                                />
+                                <span>Enable Table</span>
+                              </label>
+                            </div>
+                            {enableCountTableInBill && (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                <table className="w-full text-xs text-left">
+                                  <thead className="bg-slate-900 text-white font-extrabold uppercase text-[10px]">
+                                    <tr>
+                                      <th className="p-2.5 w-14 text-center">S.No</th>
+                                      <th className="p-2.5">Sample Wt (KG)</th>
+                                      <th className="p-2.5">Total Pieces</th>
+                                      <th className="p-2.5 text-right">Calculated Count</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 font-medium">
+                                    {cRows.map((r, i) => (
+                                      <tr key={i}>
+                                        <td className="p-2.5 text-center text-slate-500 font-bold">{i + 1}</td>
+                                        <td className="p-2.5 font-mono">{r.sampleKg} KG</td>
+                                        <td className="p-2.5 font-mono">{r.totalPieces} pcs</td>
+                                        <td className="p-2.5 text-right font-mono font-bold text-blue-700">
+                                          {Number(r.calculatedCount || (r.sampleKg > 0 ? r.totalPieces / r.sampleKg : 0)).toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 3 SUMMARY CARDS BELOW TABLES */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs pt-2">
+                            <div className="rounded-2xl p-4 bg-slate-50 border border-slate-200">
+                              <span className="text-[10px] font-extrabold text-slate-500 uppercase block font-sans">Total Weight</span>
+                              <span className="text-xl font-black text-slate-900 mt-1 block">
+                                {Number(totWt || 0).toFixed(2)} KG
+                              </span>
+                            </div>
+                            <div className="rounded-2xl p-4 bg-blue-50 border border-blue-200">
+                              <span className="text-[10px] font-extrabold text-blue-700 uppercase block font-sans">Selected Count</span>
+                              <span className="text-xl font-black text-blue-900 mt-1 block">
+                                {Number(selCount || 0).toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-200">
+                              <span className="text-[10px] font-extrabold text-emerald-700 uppercase block font-sans">Seed Exchange (Weight * Count)</span>
+                              <span className="text-xl font-black text-emerald-900 mt-1 block">
+                                {totPcs?.toLocaleString?.('en-IN') || totPcs}
+                              </span>
+                            </div>
+                          </div>
+
                           {/* AFTER SEED EXCHANGE */}
-                          <div className="space-y-2">
+                          <div className="space-y-2 pt-2">
                             <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider text-center">
                               AFTER SEED EXCHANGE UPDATED STATUS
                             </h4>
@@ -1892,23 +1977,22 @@ export default function SeedExchange() {
                       );
                     })}
 
-                    {/* Requirement 7: Only ONE Worker Payments Table in Bill */}
-                    {enableWorkerTableInBill && (
-                      <div className="space-y-2 pt-2">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">👷 Worker Categories &amp; Wages Summary</h4>
-                          {/* Requirement 8: Checkbox on top right of particular table */}
-                          <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 print:hidden">
-                            <input
-                              type="checkbox"
-                              checked={enableWorkerTableInBill}
-                              onChange={(e) => setEnableWorkerTableInBill(e.target.checked)}
-                              className="rounded text-blue-600 focus:ring-blue-500"
-                            />
-                            <span>Enable Table</span>
-                          </label>
-                        </div>
+                    {/* WORKER WAGES TABLE */}
+                    <div className={`space-y-2 pt-2 table-card-container break-inside-avoid page-break-inside-avoid ${!enableWorkerTableInBill ? 'print:hidden' : ''}`}>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">👷 Worker Categories &amp; Wages Summary</h4>
+                        <label className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700 cursor-pointer bg-slate-50 hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 print:hidden select-none">
+                          <input
+                            type="checkbox"
+                            checked={enableWorkerTableInBill}
+                            onChange={(e) => setEnableWorkerTableInBill(e.target.checked)}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          />
+                          <span>Enable Table</span>
+                        </label>
+                      </div>
 
+                      {enableWorkerTableInBill && (
                         <div className="overflow-x-auto rounded-xl border border-slate-200">
                           <table className="w-full text-xs text-left">
                             <thead className="bg-slate-900 text-white font-extrabold uppercase text-[10px]">
@@ -1942,8 +2026,8 @@ export default function SeedExchange() {
                             </tfoot>
                           </table>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
 
                     {/* Supervisor Details & Digital Signature */}
                     <div className="pt-4 border-t border-slate-200 space-y-4 break-inside-avoid page-break-inside-avoid">
@@ -2019,7 +2103,7 @@ export default function SeedExchange() {
         <div className="space-y-6">
           
           {/* Search Functionality Bar */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-card flex flex-col md:flex-row items-center justify-between gap-3">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-card flex flex-col md:flex-row items-center justify-between gap-3 print:hidden">
             <div className="flex flex-wrap items-center gap-3">
               {/* Date Search */}
               <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-300">
@@ -2060,7 +2144,7 @@ export default function SeedExchange() {
           </div>
 
           {/* Overall Report Ledger Table */}
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-4">
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-4 print:hidden">
             <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
               <span>📊</span> Overall Seed Exchange Reports Ledger ({filteredReportsLedger.length})
             </h3>
@@ -2120,8 +2204,8 @@ export default function SeedExchange() {
 
       {/* Requirement 9: Full Bill Modal with Print PDF capability */}
       {viewingReportModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:static print:p-0">
-          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden my-auto border border-slate-200 print:shadow-none print:border-none print:w-full">
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:static print:p-0 print:m-0 print:bg-white print:overflow-visible print:block print:w-full print:max-w-none print:h-auto">
+          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden my-auto border border-slate-200 print:shadow-none print:border-none print:w-full print:max-w-none print:overflow-visible print:block print:m-0 print:p-0 print:rounded-none print:h-auto">
             
             {/* Modal Header */}
             <div className="bg-slate-900 p-4 text-white flex items-center justify-between print:hidden">
@@ -2150,7 +2234,7 @@ export default function SeedExchange() {
             </div>
 
             {/* Printable Full Bill Body */}
-            <div id="printable-report-modal-document" className="p-8 space-y-6 text-slate-800 bg-white">
+            <div id="printable-report-modal-document" className="p-8 space-y-6 text-slate-800 bg-white print:p-0 print:m-0 print:space-y-4">
               <div className="text-center border-b border-slate-200 pb-4 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
                   OFFICIAL SEED EXCHANGE STATEMENT
@@ -2183,7 +2267,7 @@ export default function SeedExchange() {
               </div>
 
               {/* Weighment Table */}
-              {viewingReportModal.weighment_rows && viewingReportModal.weighment_rows.length > 0 && (
+              {viewingReportModal.enable_weighment !== false && viewingReportModal.weighment_rows && viewingReportModal.weighment_rows.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">⚖️ Weighment Table</h4>
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -2210,7 +2294,7 @@ export default function SeedExchange() {
               )}
 
               {/* Count Table */}
-              {viewingReportModal.count_rows && viewingReportModal.count_rows.length > 0 && (
+              {viewingReportModal.enable_count !== false && viewingReportModal.count_rows && viewingReportModal.count_rows.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">🔢 Count Table</h4>
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -2241,7 +2325,7 @@ export default function SeedExchange() {
               )}
 
               {/* Summary Cards */}
-              <div className="grid grid-cols-3 gap-4 font-mono text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-xs">
                 <div className="rounded-2xl p-4 bg-slate-50 border border-slate-200">
                   <span className="text-[10px] font-extrabold text-slate-500 uppercase block font-sans">Total Weight</span>
                   <span className="text-xl font-black text-slate-900 mt-1 block">
@@ -2255,7 +2339,7 @@ export default function SeedExchange() {
                   </span>
                 </div>
                 <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-200">
-                  <span className="text-[10px] font-extrabold text-emerald-700 uppercase block font-sans">Exchanged Seed</span>
+                  <span className="text-[10px] font-extrabold text-emerald-700 uppercase block font-sans">Seed Exchange (Weight * Count)</span>
                   <span className="text-xl font-black text-emerald-900 mt-1 block">
                     {viewingReportModal.total_pieces?.toLocaleString?.('en-IN') || viewingReportModal.total_pieces}
                   </span>
@@ -2281,7 +2365,7 @@ export default function SeedExchange() {
               </div>
 
               {/* Worker Payment Summary if present */}
-              {viewingReportModal.wages_rows && viewingReportModal.wages_rows.length > 0 && (
+              {viewingReportModal.enable_worker !== false && viewingReportModal.wages_rows && viewingReportModal.wages_rows.length > 0 && (
                 <div className="space-y-2 pt-2">
                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">👷 Worker Categories &amp; Wages Summary</h4>
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
