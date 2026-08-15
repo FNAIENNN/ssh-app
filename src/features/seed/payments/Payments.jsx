@@ -1,16 +1,23 @@
 import { useState } from 'react';
 import { useSite } from '../../../hooks/useSite';
 import { Empty } from '../../../components/ui/State';
-import SeedPayments from './seedPayments/SeedPayments';
 import OutsideWorkers from './outsideWorkers/OutsideWorkers';
 import History from './history/History';
+import SeedPayments from './seedPayments/SeedPayments';
+import { SeedBillProvider } from './SeedBillContext';
+import SeedOrderWorkflow from './seedPayments/SeedOrderWorkflow';
 
 /**
- * Payments Card (PRD §7.2).
- * Three sub-tabs: Seed Payments · Outside Workers · History.
- * Seed Payments + Outside Workers both drive the shared RequestPayment panel;
- * History lists bills and can redirect back to Seed Payments to clear a
- * pending amount (carrying the bill so RequestPayment is prefilled with it).
+ * Seed Payments workspace.
+ *
+ * Preserves the existing:
+ *   - Outside Workers
+ *   - History
+ *
+ * Adds Friend A's new:
+ *   - Seed Order / Bill lifecycle workflow
+ *
+ * Backend persistence for the new workflow will be completed separately.
  */
 const TABS = [
   { id: 'seed', label: '💵 Seed Payments' },
@@ -21,14 +28,9 @@ const TABS = [
 export default function Payments() {
   const { siteId } = useSite();
   const [tab, setTab] = useState('seed');
-  // Carries a bill from History → Seed Payments so the pending amount can be paid.
-  const [resumeBill, setResumeBill] = useState(null);
 
-  if (!siteId) return <Empty icon="🗺️" title="Select a site first" />;
-
-  function goToSeed(bill) {
-    setResumeBill(bill);
-    setTab('seed');
+  if (!siteId) {
+    return <Empty icon="🗺️" title="Select a site first" />;
   }
 
   return (
@@ -37,12 +39,20 @@ export default function Payments() {
         {TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
             className="px-4 py-2 rounded-full text-sm font-semibold border transition"
             style={
               tab === t.id
-                ? { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' }
-                : { borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }
+                ? {
+                    background: 'var(--color-primary)',
+                    color: '#fff',
+                    borderColor: 'var(--color-primary)',
+                  }
+                : {
+                    borderColor: 'var(--color-border)',
+                    color: 'var(--color-text-secondary)',
+                  }
             }
           >
             {t.label}
@@ -51,14 +61,14 @@ export default function Payments() {
       </div>
 
       {tab === 'seed' && (
-        <SeedPayments
-          siteId={siteId}
-          resumeBill={resumeBill}
-          onResumeCleared={() => setResumeBill(null)}
-        />
+        <SeedBillProvider siteId={siteId}>
+          <SeedOrderWorkflow siteId={siteId} />
+        </SeedBillProvider>
       )}
+
       {tab === 'workers' && <OutsideWorkers siteId={siteId} />}
-      {tab === 'history' && <History siteId={siteId} onPayPending={goToSeed} />}
+
+      {tab === 'history' && <History siteId={siteId} />}
     </div>
   );
 }

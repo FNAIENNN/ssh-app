@@ -13,6 +13,7 @@ const CARDS = [
   { to: 'exchange', label: 'Seed Exchange', icon: '🔁' },
   { to: 'food', label: 'Food', icon: '🍱' },
   { to: 'reports', label: 'Reports', icon: '📊' },
+  { to: 'applications', label: 'Applications', icon: '📝' },
 ];
 
 export default function SeedTab() {
