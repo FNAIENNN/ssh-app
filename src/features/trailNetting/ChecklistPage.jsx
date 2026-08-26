@@ -145,7 +145,7 @@ export default function ChecklistPage() {
               className="w-4 h-4 accent-emerald-600 rounded cursor-pointer pointer-events-none"
             />
             <span className="text-xs font-extrabold select-none">
-              {isAllSelected ? 'Deselect All' : 'Select All Items'}
+              {isAllSelected ? 'Deselect All' : 'Select All Checklist'}
             </span>
           </div>
         </div>
