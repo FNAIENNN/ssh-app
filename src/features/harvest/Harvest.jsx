@@ -8,19 +8,17 @@ import FullHarvestModule from './components/full/FullHarvestModule';
 import HarvestPaymentsTab from './tabs/HarvestPaymentsTab';
 import HarvestReportsTab from './tabs/HarvestReportsTab';
 import HarvestSettingsTab from './tabs/HarvestSettingsTab';
-import HarvestFoodTab from './tabs/HarvestFoodTab';
 
 /**
  * Harvest — Main Harvest Tab feature module.
- * 8 main tabs:
- *   1. Dashboard
- *   2. Prices
- *   3. Middle Harvest
- *   4. Full Harvest
- *   5. Payments
- *   6. Food (canteen request)
- *   7. Reports
- *   8. Settings
+ * 7 main tabs:
+ *   1. Dashboard (FCR Calculation Table, 12 KPIs, 4 charts, activity feed)
+ *   2. Prices (Market price reference by count, revenue calculator)
+ *   3. Middle Harvest (Data Entry & Billing Details two-section module)
+ *   4. Full Harvest (Data Entry & Billing Details two-section module, auto-empties tank on complete)
+ *   5. Payments (Financial ledger & RequestPayment integration)
+ *   6. Reports (FCR, Survival %, Yield per acre, CSV export, Print)
+ *   7. Settings (Graders, Labour Suppliers, Tanks, Checklist Items)
  */
 export default function Harvest() {
   const { site, siteId } = useSite();
@@ -46,7 +44,6 @@ export default function Harvest() {
     { id: 'middle', label: 'Middle Harvest', icon: '🐟' },
     { id: 'full', label: 'Full Harvest', icon: '🏁' },
     { id: 'payments', label: 'Payments', icon: '💰' },
-    { id: 'food', label: 'Food', icon: '🍱' },
     { id: 'reports', label: 'Reports', icon: '📊' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
@@ -120,10 +117,6 @@ export default function Harvest() {
 
       <div className={activeTab === 'payments' ? 'block' : 'hidden'}>
         <HarvestPaymentsTab siteId={activeSiteId} />
-      </div>
-
-      <div className={activeTab === 'food' ? 'block' : 'hidden'}>
-        <HarvestFoodTab />
       </div>
 
       <div className={activeTab === 'reports' ? 'block' : 'hidden'}>

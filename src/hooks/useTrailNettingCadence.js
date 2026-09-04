@@ -66,32 +66,13 @@ export function computeCadence({ startDate, records = [] }) {
 
   // Status flags used by the UI + notifications.
   let status = 'waiting'; // not yet day 45
-  let canNet = false;
-  let daysSinceLastNetting = lastRecord?.date ? daysBetween(lastRecord.date, today) : 0;
-
   if (doneCount === 0) {
-    if (day >= 45 && day <= 60) {
-      status = 'due';
-      canNet = true;
-    } else if (day > 60) {
-      status = 'overdue';
-      canNet = true;
-    } else if (day >= 38) {
-      status = 'approaching';
-      canNet = false;
-    } else {
-      status = 'waiting';
-      canNet = false;
-    }
+    if (day >= 45 && day <= 60) status = 'due';
+    else if (day > 60) status = 'overdue';
+    else if (day >= 38) status = 'approaching';
   } else {
-    // Subsequent nettings only allowed every 7 days from previous trail netting date
-    if (daysSinceLastNetting >= 7) {
-      canNet = true;
-      status = daysSinceLastNetting > 10 ? 'overdue' : 'due';
-    } else {
-      canNet = false;
-      status = 'waiting_interval';
-    }
+    if (nextExpectedDate && today > nextExpectedDate) status = 'overdue';
+    else if (nextExpectedDate) status = 'due';
   }
 
   return {
@@ -101,10 +82,8 @@ export function computeCadence({ startDate, records = [] }) {
     nextExpectedDate,
     windowStart,
     windowEnd,
-    status, // waiting | approaching | due | overdue | waiting_interval
-    canNet,
-    daysSinceLastNetting,
-    daysUntilNext: Math.max(0, 7 - daysSinceLastNetting),
+    status, // waiting | approaching | due | overdue
+    canNet: doneCount === 0 ? day >= 45 : true,
   };
 }
 

@@ -8,8 +8,7 @@ import { Empty } from '../../components/ui/State';
  * Renders a sub-nav and the active card via <Outlet />.
  */
 const CARDS = [
-  { to: 'dashboard', label: 'Dashboard', icon: '🗂️' },
-  { to: 'seed-stock', label: 'Seed Stock', icon: '🌱' },
+  { to: 'sections', label: 'Sections', icon: '🗂️' },
   { to: 'payments', label: 'Payments', icon: '💳' },
   { to: 'exchange', label: 'Seed Exchange', icon: '🔁' },
   { to: 'food', label: 'Food', icon: '🍱' },
@@ -41,7 +40,6 @@ export default function SeedTab() {
           <NavLink
             key={c.to}
             to={c.to}
-            end={c.to === 'dashboard'}
             className={({ isActive }) =>
               `px-4 py-2 rounded-full text-sm font-semibold border transition flex items-center gap-2 ${
                 isActive ? 'text-white' : 'bg-transparent'

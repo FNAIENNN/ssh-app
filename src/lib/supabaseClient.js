@@ -67,13 +67,5 @@ export const TABLES = {
   harvestChecklists: 'harvest_checklists',
   graders: 'graders',
   labourSuppliers: 'labour_suppliers',
-  suppliers: 'labour_suppliers',
   harvestWeighments: 'harvest_weighments',
-  hatcheries: 'hatcheries',
-  hatcheryBankAccounts: 'hatchery_bank_accounts',
-  trailNettingSettings: 'trail_netting_settings',
-  trailNettingPayments: 'trail_netting_payments',
-  feedCharts: 'feed_charts',
-  foodSubmissions: 'food_submissions',
-  foodSessions: 'food_sessions',
 };

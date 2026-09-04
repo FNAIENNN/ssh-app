@@ -431,14 +431,6 @@ export default function SeedExchange() {
     return Boolean(fromTankId && toTankId && expectedQty && Number(expectedQty) > 0);
   }, [fromTankId, toTankId, expectedQty]);
 
-  const isWeightEntryValid = useMemo(() => {
-    return weighmentRows.some((r) => Number(r.grossKg) > 0 && Number(r.nets) > 0);
-  }, [weighmentRows]);
-
-  const isCountValid = useMemo(() => {
-    return countRows.some((r) => Number(r.sampleKg) > 0 && Number(r.totalPieces) > 0);
-  }, [countRows]);
-
   // ── Step 2 Checklist Handlers ─────────────────────────────────────────
   const visibleChecklistItems = useMemo(() => {
     return checklistItems.filter((item) => item.stage === checklistStage);
@@ -1306,13 +1298,8 @@ export default function SeedExchange() {
 
                     <button
                       type="button"
-                      disabled={!isWeightEntryValid}
                       onClick={() => setDataEntryStep('count')}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
-                        isWeightEntryValid
-                          ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs rounded-xl shadow-md"
                     >
                       Submit to Count Section →
                     </button>

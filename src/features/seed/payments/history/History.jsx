@@ -1,291 +1,212 @@
-/**
- * History — Complete bill archive for the Seed module.
- *
- * Shows ALL bills (Past Orders + Completed). Clicking a bill shows a
- * full read-only audit view using the shared BillDetailsReadOnly component.
- *
- * Search: Bill Number, Hatchery, Driver, Vehicle, Tank
- * Filters: Day / Week / Month / Year
- */
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
-import BillDetailsReadOnly from '../BillDetailsReadOnly';
+import { formatDate } from '../../../../hooks/useTrailNettingCadence';
+import LedgerTable from '../../../../components/payments/LedgerTable';
 
-// ── Date filter helpers ────────────────────────────────────────────────────
-
-function isWithin(dateStr, range) {
-  if (!dateStr || range === 'all') return true;
-  const d = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now - d;
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  if (range === 'day') return diffDays <= 1;
-  if (range === 'week') return diffDays <= 7;
-  if (range === 'month') return diffDays <= 31;
-  if (range === 'year') return diffDays <= 365;
-  return true;
-}
-
-function statusBadgeStyle(b) {
-  const s = b.status || 'Draft';
-  if (s === 'Completed' || b.stocking_status === 'completed')
-    return { bg: '#dcfce7', color: '#15803d', border: '#22c55e', label: '✓ Completed' };
-  if (s === 'Seed Stocking In Progress')
-    return { bg: '#dbeafe', color: '#1d4ed8', border: '#3b82f6', label: '🌱 Stocking…' };
-  if (s === 'Vehicle Payment Requested')
-    return { bg: '#ede9fe', color: '#6d28d9', border: '#8b5cf6', label: '🚛 Vehicle Pay Req.' };
-  if (s === 'Payment Requested')
-    return { bg: '#fef3c7', color: '#b45309', border: '#f59e0b', label: '💳 Payment Req.' };
-  if (s === 'Pending Seed Stocking')
-    return { bg: '#fef9c3', color: '#a16207', border: '#eab308', label: '📦 Pending Stocking' };
-  return { bg: '#f1f5f9', color: '#475569', border: '#cbd5e1', label: `📝 ${s}` };
-}
-
-// ── Main Component ────────────────────────────────────────────────────────────
-
-export default function History({ siteId }) {
-  const [allBills, setAllBills] = useState([]);
+/**
+ * Payment History (PRD §7.2).
+ *
+ * Lists every bill number for the site with a search box. Selecting a bill
+ * shows three category tables one below the other — Seed, Vehicle, Workers —
+ * each with: Total amount · Advance payment · Cash payment · Pending amount.
+ *
+ * If a category has a pending amount, a button sends the user back to the
+ * Payments tab (via `onPayPending(bill)`) to clear it, prefilled with the bill.
+ */
+export default function History({ siteId, onPayPending }) {
+  const [bills, setBills] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [dateFilter, setDateFilter] = useState('all');
-
-  // Selected bill for detail view
-  const [selectedBill, setSelectedBill] = useState(null);
-  const [billPayments, setBillPayments] = useState([]);
-  const [billVehicles, setBillVehicles] = useState([]);
-  const [vehiclePayments, setVehiclePayments] = useState([]);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
 
   useEffect(() => {
     if (!siteId) return;
-    loadHistory();
-  }, [siteId]);
-
-  async function loadHistory() {
     setLoading(true);
-    try {
-      const { data } = await supabase
+    (async () => {
+      const { data: b } = await supabase
         .from(TABLES.bills)
         .select('*')
         .eq('site_id', siteId)
-        .in('type', ['seed', 'seed_order', 'return'])
         .order('created_at', { ascending: false });
-      setAllBills(data ?? []);
-    } catch (err) {
-      console.error('loadHistory error:', err);
-      setAllBills([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function openBill(bill) {
-    setSelectedBill(bill);
-    setLoadingDetail(true);
-    try {
-      const [{ data: pays }, { data: vehs }] = await Promise.all([
-        supabase
-          .from(TABLES.payments)
-          .select('*')
-          .eq('bill_id', bill.id)
-          .order('created_at', { ascending: true }),
-        supabase.from(TABLES.vehicleBookings).select('*').eq('bill_id', bill.id),
-      ]);
-
-      setBillPayments(pays ?? []);
-      setBillVehicles(vehs ?? []);
-
-      // Load vehicle payments separately
-      const { data: vPays } = await supabase
+      const { data: p } = await supabase
         .from(TABLES.payments)
         .select('*')
-        .eq('bill_id', bill.id)
-        .eq('type', 'vehicle');
-      setVehiclePayments(vPays ?? []);
-    } finally {
-      setLoadingDetail(false);
-    }
+        .eq('site_id', siteId);
+      setBills(b ?? []);
+      setPayments(p ?? []);
+      setLoading(false);
+      if (b?.length && !selectedId) setSelectedId(b[0].id);
+    })();
+  }, [siteId]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bills;
+    return bills.filter((b) => String(b.bill_number ?? '').toLowerCase().includes(q));
+  }, [bills, query]);
+
+  const bill = bills.find((b) => b.id === selectedId) ?? null;
+
+  if (loading) {
+    return <p className="text-sm text-text-muted p-2">Loading history…</p>;
   }
-
-  function closeDetail() {
-    setSelectedBill(null);
-    setBillPayments([]);
-    setBillVehicles([]);
-    setVehiclePayments([]);
-  }
-
-  // ── Filtered list ─────────────────────────────────────────────────────────
-  const filteredBills = useMemo(() => {
-    let result = allBills.filter((b) => isWithin(b.created_at, dateFilter));
-
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      result = result.filter((b) => {
-        if ((b.bill_number || '').toLowerCase().includes(q)) return true;
-        if ((b.hatchery || '').toLowerCase().includes(q)) return true;
-        if ((b.selected_tanks || []).some((t) => t.name?.toLowerCase().includes(q))) return true;
-        // Search in new drum format
-        if (b.van_plan?.drums) {
-          if (b.van_plan.drums.some((d) => d.tankName?.toLowerCase().includes(q))) return true;
-        }
-        // Search in old row format
-        if (b.van_plan?.rows) {
-          for (const r of b.van_plan.rows) {
-            if (r.left?.tankName?.toLowerCase().includes(q)) return true;
-            if (r.right?.tankName?.toLowerCase().includes(q)) return true;
-          }
-        }
-        return false;
-      });
-    }
-    return result;
-  }, [allBills, query, dateFilter]);
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // RENDER: Bill Detail View — uses shared BillDetailsReadOnly
-  // ══════════════════════════════════════════════════════════════════════════
-  if (selectedBill) {
-    if (loadingDetail) {
-      return (
-        <div className="max-w-4xl mx-auto p-8 text-center">
-          <p className="text-sm text-text-muted animate-pulse">Loading bill details…</p>
-        </div>
-      );
-    }
+  if (!bills.length) {
     return (
-      <BillDetailsReadOnly
-        bill={selectedBill}
-        payments={billPayments}
-        vehicles={billVehicles}
-        vehiclePayments={vehiclePayments}
-        onBack={closeDetail}
-        showExport
-      />
+      <div className="card p-6 text-sm text-text-muted">
+        No bills yet. Generate one from <strong>Seed Payments → Proceed to Pay</strong>.
+      </div>
     );
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // RENDER: History List
-  // ══════════════════════════════════════════════════════════════════════════
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h2 className="text-xl font-extrabold flex items-center gap-2">
-          <span>🕓</span> History
-        </h2>
-        <p className="text-xs text-text-secondary">Complete archive of all seed order bills.</p>
-      </div>
-
-      {/* Search & Filters */}
-      <div
-        className="flex flex-wrap items-center gap-3 p-4 rounded-[12px] bg-white border"
-        style={{ borderColor: 'var(--color-border)' }}
-      >
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Bill list + search */}
+      <div className="card p-4 lg:col-span-1">
+        <div className="flex items-center gap-2 mb-3">
+          <h3 className="font-bold">History</h3>
+          <span
+            className="chip ml-auto"
+            style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}
+          >
+            {bills.length} bill{bills.length === 1 ? '' : 's'}
+          </span>
+        </div>
         <input
-          type="text"
-          className="field text-xs py-1.5 flex-1 min-w-[180px]"
-          placeholder="🔍 Search by bill no., hatchery, tank…"
+          className="field mb-3"
+          placeholder="Search bill number…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { id: 'all', label: 'All Time' },
-            { id: 'day', label: 'Today' },
-            { id: 'week', label: 'This Week' },
-            { id: 'month', label: 'This Month' },
-            { id: 'year', label: 'This Year' },
-          ].map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setDateFilter(f.id)}
-              className="px-3 py-1.5 rounded-full text-xs font-semibold border transition"
-              style={{
-                background: dateFilter === f.id ? 'var(--color-primary)' : 'transparent',
-                color: dateFilter === f.id ? '#fff' : 'var(--color-text-secondary)',
-                borderColor: dateFilter === f.id ? 'var(--color-primary)' : 'var(--color-border)',
-              }}
-            >
-              {f.label}
-            </button>
-          ))}
+        <div className="space-y-1 max-h-[60vh] overflow-y-auto scroll-thin">
+          {filtered.map((b) => {
+            const active = b.id === selectedId;
+            return (
+              <button
+                key={b.id}
+                onClick={() => setSelectedId(b.id)}
+                className="w-full text-left rounded-[10px] px-3 py-2 border transition"
+                style={{
+                  borderColor: active ? 'var(--color-primary)' : 'var(--color-border)',
+                  background: active ? 'rgba(26,26,46,0.06)' : 'transparent',
+                }}
+              >
+                <span className="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                  {b.bill_number}
+                </span>
+                <span className="block text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                  {formatDate(b.created_at)}
+                </span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="text-xs text-text-muted p-2">No bills match “{query}”.</p>
+          )}
         </div>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-text-muted p-4 animate-pulse">Loading history…</p>
-      ) : filteredBills.length === 0 ? (
-        <div className="card p-8 text-center space-y-2 border-dashed border-2">
-          <div className="text-4xl">📂</div>
-          <p className="font-bold">No bills found</p>
-          <p className="text-xs text-text-muted">
-            {query || dateFilter !== 'all'
-              ? 'Try changing filters or search terms.'
-              : 'Complete a Seed Order workflow to see bills here.'}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredBills.map((b) => {
-            const badge = statusBadgeStyle(b);
-            const isCompleted = b.status === 'Completed' || b.stocking_status === 'completed';
-            return (
-              <div
-                key={b.id}
-                onClick={() => openBill(b)}
-                className="card p-5 border cursor-pointer hover:shadow-lg transition space-y-3"
-                style={{ borderColor: 'var(--color-border)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <span
-                    className="text-sm font-extrabold px-3 py-1 rounded-full text-white"
-                    style={{ background: isCompleted ? '#059669' : 'var(--color-primary)' }}
-                  >
-                    {b.bill_number}
-                  </span>
-                  <span
-                    className="text-xs font-extrabold px-2.5 py-0.5 rounded-full"
-                    style={{ background: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}
-                  >
-                    {badge.label}
-                  </span>
-                </div>
-
-                <div className="space-y-1 text-xs text-text-secondary">
-                  <p className="font-bold text-sm text-text-primary">{b.hatchery || 'Hatchery Not Specified'}</p>
-                  <p>Seed Type: <strong>{b.seed_type || '—'}</strong></p>
-                  <p>Quantity: <strong>{Number(b.overall_quantity || 0).toLocaleString('en-IN')}</strong> pcs</p>
-                  {(b.selected_tanks || []).length > 0 && (
-                    <p>
-                      Tanks: <strong>{(b.selected_tanks || []).map((t) => t.name).join(', ')}</strong>
-                    </p>
-                  )}
-                  <p>Created: {new Date(b.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                </div>
-
-                <div
-                  className="pt-2 border-t flex items-center justify-between"
-                  style={{ borderColor: 'var(--color-border)' }}
-                >
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-text-muted">Total Price</p>
-                    <p className="text-base font-extrabold text-success">
-                      ₹{Number(b.seed_total || 0).toLocaleString('en-IN')}
-                    </p>
-                  </div>
-                  <span
-                    className="text-xs font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}
-                  >
-                    View Details 👁️
-                  </span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Bill detail — 3 category tables */}
+      <div className="lg:col-span-2 space-y-4">
+        {bill ? (
+          <BillDetail
+            bill={bill}
+            payments={payments.filter((p) => p.bill_id === bill.id)}
+            onPayPending={onPayPending}
+          />
+        ) : (
+          <div className="card p-6 text-sm text-text-muted">Select a bill to view its details.</div>
+        )}
+      </div>
     </div>
   );
+}
+
+/**
+ * Renders the three category tables (Seed / Vehicle / Workers) for a bill.
+ * Each row aggregates that category's payments.
+ */
+function BillDetail({ bill, payments, onPayPending }) {
+  // Seed total is the bill's own seed_total; vehicle/workers totals come from
+  // linked payments of that type (a seed bill may also carry linked advances).
+  const rows = [
+    categoryRow('seed', 'Seed Payments', '🌱', 'var(--color-success)', bill.seed_total, payments),
+    categoryRow('vehicle', 'Vehicle Payments', '🚚', 'var(--color-info)', bill.vehicle_total, payments),
+    categoryRow('outside_worker', 'Workers Payments', '👷', 'var(--color-warning)', bill.workers_total, payments),
+  ];
+
+  return (
+    <>
+      <div
+        className="rounded-[16px] px-5 py-4 flex items-center justify-between"
+        style={{
+          background: 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%)',
+          boxShadow: '0 4px 16px rgba(26,26,46,0.25)',
+        }}
+      >
+        <div>
+          <p className="text-xs font-semibold text-white/70">Bill</p>
+          <p className="text-xl font-extrabold text-white tracking-wide">{bill.bill_number}</p>
+        </div>
+        <p className="text-xs text-white/80">{formatDate(bill.created_at)}</p>
+      </div>
+
+      {rows.map((r) => (
+        <CategoryTable key={r.type} {...r} onPayPending={onPayPending ? () => onPayPending(bill) : null} bill={bill} />
+      ))}
+    </>
+  );
+}
+
+function CategoryTable({ label, icon, color, total, advance, cash, pending, onPayPending }) {
+  const columns = ['Total Amount', 'Advance Payment', 'Cash Payment', 'Pending Amount'];
+  const fmt = (n) => (n ? `₹${Number(n).toLocaleString('en-IN')}` : '—');
+  const cells = [
+    <span className="text-xs font-extrabold">{fmt(total)}</span>,
+    <span className="text-xs font-semibold">{fmt(advance)}</span>,
+    <span className="text-xs font-semibold">{fmt(cash)}</span>,
+    pending > 0 ? (
+      <span className="inline-flex items-center gap-2">
+        <span className="chip" style={{ background: 'var(--color-danger-bg)', color: 'var(--color-danger)' }}>
+          {fmt(pending)}
+        </span>
+        {onPayPending && (
+          <button onClick={onPayPending} className="text-xs font-bold" style={{ color: 'var(--color-primary)' }}>
+            Pay →
+          </button>
+        )}
+      </span>
+    ) : (
+      <span className="chip" style={{ background: 'var(--color-success-bg)', color: 'var(--color-success)' }}>
+        Cleared
+      </span>
+    ),
+  ];
+
+  return (
+    <LedgerTable
+      title={`${icon} ${label}`}
+      color={color}
+      icon={icon}
+      columns={columns}
+      rows={[cells]}
+    />
+  );
+}
+
+/**
+ * Compute one category row's totals from a bill + its linked payments.
+ *   total    = bill seed_total for seed, else Σ payments of that type
+ *   advance  = Σ advance-method payments of that type
+ *   cash     = Σ cash-method payments of that type
+ *   pending  = total − (advance + cash)
+ */
+function categoryRow(type, label, icon, color, billFieldTotal, payments) {
+  const cat = payments.filter((p) => p.type === type);
+  const advance = cat.filter((p) => p.method === 'advance').reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const cash = cat.filter((p) => p.method === 'cash').reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  // Seed: prefer the bill's own seed_total; otherwise fall back to Σ seed payments.
+  const total = type === 'seed' && billFieldTotal ? Number(billFieldTotal) : cat.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const pending = Math.max(0, total - advance - cash);
+  return { type, label, icon, color, total, advance, cash, pending };
 }

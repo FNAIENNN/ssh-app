@@ -9,29 +9,20 @@ import { supabase, TABLES } from '../lib/supabaseClient';
 const SiteContext = createContext(null);
 
 const STORAGE_KEY = 'ssh.selectedSiteId';
-const SECTION_STORAGE_KEY = 'ssh.selectedSectionId';
 
 export function SiteProvider({ children }) {
   const [siteId, setSiteId] = useState(() => localStorage.getItem(STORAGE_KEY) || null);
-  const [selectedSectionId, setSelectedSectionId] = useState(() => localStorage.getItem(SECTION_STORAGE_KEY) || null);
   const [site, setSite] = useState(null);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const selectSite = useCallback((id) => {
     setSiteId(id);
-    setSelectedSectionId(null);
-    localStorage.removeItem(SECTION_STORAGE_KEY);
     if (id) localStorage.setItem(STORAGE_KEY, id);
     else localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const selectSection = useCallback((secId) => {
-    setSelectedSectionId(secId);
-    if (secId) localStorage.setItem(SECTION_STORAGE_KEY, secId);
-    else localStorage.removeItem(SECTION_STORAGE_KEY);
-  }, []);
-
+  // Load the catalogue of sites the user can access.
   const loadSites = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from(TABLES.sites).select('*').order('name');
@@ -43,6 +34,7 @@ export function SiteProvider({ children }) {
     loadSites();
   }, [loadSites]);
 
+  // Resolve the full site row when siteId changes.
   useEffect(() => {
     if (!siteId) {
       setSite(null);
@@ -66,16 +58,13 @@ export function SiteProvider({ children }) {
     () => ({
       siteId,
       site,
-      currentSite: site,
       sites,
       loading,
-      selectedSectionId,
-      selectSection,
       selectSite,
       clearSite: () => selectSite(null),
       refreshSites: loadSites,
     }),
-    [siteId, site, sites, loading, selectedSectionId, selectSection, selectSite, loadSites]
+    [siteId, site, sites, loading, selectSite, loadSites]
   );
 
   return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>;

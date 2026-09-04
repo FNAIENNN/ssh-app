@@ -18,7 +18,7 @@ import { buildDemoData, DEMO_USER } from './demoData';
  * triggers it. This mirrors supabase-js semantics.
  */
 
-const STORAGE_KEY = 'ssh.demoDb.v4';
+const STORAGE_KEY = 'ssh.demoDb.v1';
 const SESSION_KEY = 'ssh.demoSession';
 
 // JS table keys (TABLES map) → localStorage collection names.
@@ -30,7 +30,6 @@ const TABLE_NAMES = {
   tanks: 'tanks',
   seed_entries: 'seed_entries',
   seed_exchanges: 'seed_exchanges',
-  exchange_workers: 'exchange_workers',
   payments: 'payments',
   bills: 'bills',
   payment_accounts: 'payment_accounts',
@@ -47,41 +46,19 @@ const TABLE_NAMES = {
   graders: 'graders',
   labour_suppliers: 'labour_suppliers',
   harvest_weighments: 'harvest_weighments',
-  hatcheries: 'hatcheries',
-  hatchery_bank_accounts: 'hatchery_bank_accounts',
-  trail_netting_settings: 'trail_netting_settings',
-  trail_netting_payments: 'trail_netting_payments',
-  feed_charts: 'feed_charts',
-  food_submissions: 'food_submissions',
-  food_sessions: 'food_sessions',
 };
 
 // ── Persistence ──────────────────────────────────────────────────────────
 function loadDb() {
-  let db;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) db = JSON.parse(raw);
+    if (raw) return JSON.parse(raw);
   } catch {
     /* fall through to seed */
   }
-
   const seed = buildDemoData();
-
-  if (!db || !Array.isArray(db.bills)) {
-    db = seed;
-  } else {
-    // Ensure all seed bills are present in db
-    const existingBillIds = new Set((db.bills || []).map((b) => b.id));
-    (seed.bills || []).forEach((sb) => {
-      if (!existingBillIds.has(sb.id)) {
-        db.bills.push(sb);
-      }
-    });
-  }
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-  return db;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
+  return seed;
 }
 
 function saveDb(db) {
