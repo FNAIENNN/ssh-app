@@ -1476,18 +1476,20 @@ export default function SeedExchange() {
                 </button>
                 <button
                   type="button"
+                  disabled={selectedWorkerBillIds.length === 0}
                   onClick={() => setWorkerStep('workerDetails')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black transition ${
-                    workerStep === 'workerDetails' ? 'bg-emerald-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    workerStep === 'workerDetails' ? 'bg-emerald-700 text-white shadow-sm' : selectedWorkerBillIds.length > 0 ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'
                   }`}
                 >
                   2. Worker Payments
                 </button>
                 <button
                   type="button"
+                  disabled={!isWorkerDetailsValid}
                   onClick={() => setWorkerStep('overallView')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black transition ${
-                    workerStep === 'overallView' ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    workerStep === 'overallView' ? 'bg-blue-700 text-white shadow-sm' : isWorkerDetailsValid ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'
                   }`}
                 >
                   3. Overall View
