@@ -30,6 +30,13 @@ export default function RequestPayment({
   onPaid,
   prefillAmount = null,
   billId = null,
+  totalOrderPrice = null,
+  supplierSection = null,
+  selectedHatchery = null,
+  selectedHatcheryBankAccount = null,
+  onHatcheryBankAccountAdded,
+  hideMachineIdBook = false,
+  workSource = null,
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -227,9 +234,34 @@ export default function RequestPayment({
     setAdvanceTxns((prev) => prev.map((t) => (t.id === txn.id ? data : t)));
   }
 
+  useEffect(() => {
+    if (!selectedHatcheryBankAccount) return;
+    const acct = selectedHatcheryBankAccount;
+    setSelectedBankId(acct.id || null);
+    setBankForm({
+      ifsc: acct.ifsc || acct.ifsc_code || '',
+      accountNumber: acct.account_number || '',
+      bankName: acct.bank_name || '',
+      holderName: acct.holder_name || selectedHatchery?.hatchery_name || selectedHatchery?.name || '',
+    });
+    setAdvanceMode('bank');
+  }, [selectedHatcheryBankAccount, selectedHatchery]);
+
+  void onHatcheryBankAccountAdded;
+
   // ── Render ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {supplierSection}
+      {workSource && (
+        <p className="text-xs font-bold text-text-muted uppercase tracking-wider">Source: {workSource}</p>
+      )}
+      {totalOrderPrice != null && Number(totalOrderPrice) > 0 && (
+        <div className="rounded-[12px] px-4 py-3 flex items-center justify-between" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+          <span className="text-xs font-bold text-text-muted">Order total</span>
+          <span className="text-lg font-extrabold">₹{Number(totalOrderPrice).toLocaleString('en-IN')}</span>
+        </div>
+      )}
       {/* ── Cash Payment toggle ───────────────────────────────────────── */}
       <ToggleRow
         title="Cash Payment"
@@ -378,10 +410,12 @@ export default function RequestPayment({
         color="var(--color-success)"
         icon="🧾"
         emptyText="No advance payment requests generated yet."
-        columns={['Request Payment ID', 'Request Time', 'Amount', 'Status', 'Payment Proof', 'Machine IDs Book']}
+        columns={hideMachineIdBook
+          ? ['Request Payment ID', 'Request Time', 'Amount', 'Status', 'Payment Proof']
+          : ['Request Payment ID', 'Request Time', 'Amount', 'Status', 'Payment Proof', 'Machine IDs Book']}
         rows={advanceTxns.map((t) => {
           const done = t.status === 'completed';
-          return [
+          const cells = [
             <span className="text-xs font-bold">{shortId(t.id)}</span>,
             <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
             <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
@@ -401,19 +435,24 @@ export default function RequestPayment({
             ) : (
               <span className="text-xs text-text-muted">Visible after completion</span>
             ),
-            done ? (
-              <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
-                <input
-                  type="checkbox"
-                  checked={!!t.registered_in_machine_ids_book}
-                  onChange={(e) => toggleMachineBook(t, e.target.checked)}
-                />
-              </label>
-            ) : (
-              <span className="text-xs text-text-muted">Locked</span>
-            ),
           ];
+          if (!hideMachineIdBook) {
+            cells.push(
+              done ? (
+                <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                  {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
+                  <input
+                    type="checkbox"
+                    checked={!!t.registered_in_machine_ids_book}
+                    onChange={(e) => toggleMachineBook(t, e.target.checked)}
+                  />
+                </label>
+              ) : (
+                <span className="text-xs text-text-muted">Locked</span>
+              )
+            );
+          }
+          return cells;
         })}
       />
     </div>

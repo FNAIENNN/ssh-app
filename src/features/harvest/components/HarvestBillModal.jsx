@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { downloadPDF } from '../../../lib/pdfGenerator';
 
 /**
  * HarvestBillModal — Professional printable invoice bill layout for harvest entries.
@@ -7,11 +8,21 @@ import { useRef, useState } from 'react';
 export default function HarvestBillModal({ bill, harvestEntry, tank, savedTanks = [], onClose, enableWeighmentTable: initialEnableWeighment = false }) {
   const printRef = useRef(null);
   const [showWeighment, setShowWeighment] = useState(initialEnableWeighment);
+  const [downloading, setDownloading] = useState(false);
 
   if (!bill) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPDF = async () => {
+    setDownloading(true);
+    await downloadPDF(printRef.current, {
+      filename: `${isMiddleHarvest ? 'Middle_Harvest_Bill' : 'Harvest_Bill'}_${bill.bill_number || 'bill'}.pdf`,
+      orientation: 'portrait',
+    });
+    setDownloading(false);
   };
 
   const isMiddleHarvest = (bill.harvest_type || harvestEntry?.harvest_type) === 'middle';
@@ -36,8 +47,21 @@ export default function HarvestBillModal({ bill, harvestEntry, tank, savedTanks 
   const graderName = harvestEntry?.grader_name || harvestEntry?.graderData?.name || harvestEntry?.billingData?.grader_name || '';
   const supervisorName = harvestEntry?.supervisor_name || harvestEntry?.billingData?.harvest_supervisor || '';
 
-  const supervisorSig = harvestEntry?.supervisor_signature || harvestEntry?.billingData?.supervisor_signature || null;
-  const graderSig = harvestEntry?.grader_signature || harvestEntry?.graderData?.grader_signature || null;
+  const supervisorSig = harvestEntry?.supervisor_signature || harvestEntry?.billingData?.supervisor_signature || bill?.supervisor_signature || bill?.document_data?.supervisor_signature || null;
+  const graderSig = harvestEntry?.grader_signature || harvestEntry?.graderData?.grader_signature || bill?.grader_signature || bill?.document_data?.grader_signature || null;
+
+  const generateFallbackSignature = (name, title) => {
+    const displayName = String(name || title || 'Authorized Sign').trim();
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+      <path d="M 15 32 Q 35 12, 60 30 T 110 22 T 160 32" fill="none" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>
+      <text x="15" y="42" font-family="sans-serif" font-size="14" font-weight="bold" font-style="italic" fill="#0f172a">${displayName}</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  };
+
+  const finalSupervisorSig = supervisorSig || generateFallbackSignature(supervisorName || 'Harvest Incharge', 'Harvest Incharge Sign');
+  const finalGraderSig = graderSig || generateFallbackSignature(graderName || 'Grader / Contractor', 'Grader / Contractor Sign');
+  const finalManagerSig = generateFallbackSignature('Authorized Manager', 'Authorized Manager Sign');
 
   // Tanks list for Middle Harvest
   const tanksList = savedTanks.length > 0 ? savedTanks : [
@@ -72,6 +96,13 @@ export default function HarvestBillModal({ bill, harvestEntry, tank, savedTanks 
               />
               Include Weighment Table
             </label>
+            <button
+              onClick={handleDownloadPDF}
+              disabled={downloading}
+              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md transition flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <span>{downloading ? '⏳ Exporting...' : '📥 Download PDF'}</span>
+            </button>
             <button
               onClick={handlePrint}
               className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md transition flex items-center gap-1.5"
@@ -248,7 +279,11 @@ export default function HarvestBillModal({ bill, harvestEntry, tank, savedTanks 
                 const rows = st.weightRows || [];
                 const tankNetTotal = Number(st.grandTotalKgs) || 0;
                 return (
-                  <div key={st.tank_name} className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div
+                    key={st.tank_name}
+                    className="weighment-table-block rounded-xl border border-slate-200 overflow-hidden"
+                    style={{ pageBreakInside: 'avoid', breakInside: 'avoid', display: 'block' }}
+                  >
                     <h4 className="text-xs font-black text-slate-900 p-2.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
                       <span>📦 Tank {st.tank_name} Weighment Output</span>
                       <span className="font-mono text-blue-700">{rows.length} Boxes</span>
@@ -366,33 +401,32 @@ export default function HarvestBillModal({ bill, harvestEntry, tank, savedTanks 
             </div>
           )}
 
-          {/* Signatures */}
-          <div className="pt-8 border-t border-slate-200 grid grid-cols-3 gap-4 text-center text-xs text-slate-500">
+          {/* Signatures (3 Signatures) */}
+          <div className="pt-8 border-t border-slate-200 grid grid-cols-3 gap-4 text-center text-xs text-slate-600">
             <div>
-              <div className="h-12 flex items-end justify-center border-b border-slate-300 mb-1 pb-1">
-                {supervisorSig ? (
-                  <img src={supervisorSig} alt="Supervisor Signature" className="max-h-10 object-contain" />
-                ) : null}
+              <div className="h-14 flex items-end justify-center border-b border-slate-300 mb-1 pb-1">
+                <img src={finalSupervisorSig} alt="Harvest Incharge Sign" className="max-h-12 object-contain" />
               </div>
-              <span className="font-bold">
-                {isMiddleHarvest ? 'Middle Harvest Incharge Sign' : 'Harvest Incharge'}
+              <span className="font-bold text-slate-900 block">
+                {isMiddleHarvest ? 'Middle Harvest Incharge Sign' : 'Harvest Incharge Sign'}
               </span>
-              {supervisorName && <p className="text-[10px] text-slate-400">{supervisorName}</p>}
+              <p className="text-[10px] text-slate-500">{supervisorName || 'Harvest Incharge'}</p>
             </div>
 
             <div>
-              <div className="h-12 flex items-end justify-center border-b border-slate-300 mb-1 pb-1">
-                {graderSig ? (
-                  <img src={graderSig} alt="Grader Signature" className="max-h-10 object-contain" />
-                ) : null}
+              <div className="h-14 flex items-end justify-center border-b border-slate-300 mb-1 pb-1">
+                <img src={finalGraderSig} alt="Grader / Contractor Sign" className="max-h-12 object-contain" />
               </div>
-              <span className="font-bold">Grader / Contractor Sign</span>
-              {graderName && <p className="text-[10px] text-slate-400">{graderName}</p>}
+              <span className="font-bold text-slate-900 block">Grader / Contractor Sign</span>
+              <p className="text-[10px] text-slate-500">{graderName || 'Grader / Contractor'}</p>
             </div>
 
             <div>
-              <div className="h-12 border-b border-slate-300 mb-1"></div>
-              <span className="font-bold">Authorized Manager Sign</span>
+              <div className="h-14 flex items-end justify-center border-b border-slate-300 mb-1 pb-1">
+                <img src={finalManagerSig} alt="Authorized Manager Sign" className="max-h-12 object-contain opacity-90" />
+              </div>
+              <span className="font-bold text-slate-900 block">Authorized Manager Sign</span>
+              <p className="text-[10px] text-slate-500">Official Seal &amp; Stamp</p>
             </div>
           </div>
         </div>
