@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase, TABLES } from '../../../lib/supabaseClient';
+import { downloadPDF } from '../../../lib/pdfGenerator';
 import RequestPayment from '../../../components/payments/RequestPayment';
 
 /** Prevent scroll/wheel from changing number inputs */
@@ -46,6 +47,7 @@ export default function ReviewAndPayment({
   // Photo upload state for Buying Company Uploaded Bill
   const [uploadedBillPhoto, setUploadedBillPhoto] = useState(null);
   const [uploadedPhotoPreview, setUploadedPhotoPreview] = useState(null);
+  const [spotPaymentPhotos, setSpotPaymentPhotos] = useState([]);
 
   // Toggle for Weighment Detail Table (Sub-Tab 1)
   const [enableWeighmentTable, setEnableWeighmentTable] = useState(false);
@@ -119,17 +121,94 @@ export default function ReviewAndPayment({
     setHarvestTanks((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Image Upload Handler
+  // Image Upload Handler for the Harvest Bill photo
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setUploadedBillPhoto(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setUploadedPhotoPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    setUploadedBillPhoto(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedPhotoPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+    // Persist uploaded bill photo to the stored bill row if one exists
+    (async () => {
+      try {
+        const fileBase64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onloadend = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(file);
+        });
+
+        // Prefer explicit generatedBill id, otherwise match by bill_number + site
+        let billRow = null;
+        const billId = generatedBill?.id || generatedBill?.ID || null;
+        if (billId) {
+          const { data } = await supabase.from(TABLES.bills).select('id,document_data').eq('id', billId).single();
+          billRow = data;
+        } else {
+          const billNumber = uasfBillNo;
+          const { data } = await supabase.from(TABLES.bills).select('id,document_data').eq('bill_number', billNumber).eq('site_id', siteId).maybeSingle();
+          billRow = data || null;
+        }
+
+        if (!billRow) return;
+        const existingDoc = (billRow && billRow.document_data) || {};
+        const newDoc = { ...existingDoc, bill_photo: fileBase64 };
+        await supabase.from(TABLES.bills).update({ document_data: newDoc }).eq('id', billRow.id);
+      } catch (err) {
+        console.warn('Failed to persist uploaded bill photo:', err);
+      }
+    })();
+  };
+
+  // Spot payment capture is separate from the bill photo and must render only once
+  const handleSpotPhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setSpotPaymentPhotos((prev) => [...prev, { id: Date.now(), src: reader.result, name: file.name }]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+    // Persist spot photo into stored bill row if available so Reports UASF shows it
+    (async () => {
+      try {
+        const fileBase64 = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onloadend = () => res(r.result);
+          r.onerror = rej;
+          r.readAsDataURL(file);
+        });
+
+        let billRow = null;
+        const billId = generatedBill?.id || generatedBill?.ID || null;
+        if (billId) {
+          const { data } = await supabase.from(TABLES.bills).select('id,document_data').eq('id', billId).single();
+          billRow = data;
+        } else {
+          const billNumber = uasfBillNo;
+          const { data } = await supabase.from(TABLES.bills).select('id,document_data').eq('bill_number', billNumber).eq('site_id', siteId).maybeSingle();
+          billRow = data || null;
+        }
+
+        if (!billRow) return;
+        const existingDoc = (billRow && billRow.document_data) || {};
+        const existingSpots = Array.isArray(existingDoc.spotPhotos) ? existingDoc.spotPhotos : [];
+        const newSpots = [...existingSpots, { id: Date.now(), src: fileBase64, name: file.name }];
+        const newDoc = { ...existingDoc, spotPhotos: newSpots };
+        await supabase.from(TABLES.bills).update({ document_data: newDoc }).eq('id', billRow.id);
+      } catch (err) {
+        console.warn('Failed to persist spot photo:', err);
+      }
+    })();
+  };
+
+  const handleRemoveSpotPhoto = (id) => {
+    setSpotPaymentPhotos((prev) => prev.filter((photo) => photo.id !== id));
   };
 
   // Sub-Tab 2: Tank FCR & Medical Data State
@@ -182,11 +261,107 @@ export default function ReviewAndPayment({
   // Printable Reference for PDF Generation
   const printRef = useRef(null);
 
-  const handleDownloadPDF = (tabName) => {
-    const originalTitle = document.title;
-    document.title = `${tabName.replace(/\s+/g, '_')}_${uasfBillNo}`;
-    window.print();
-    document.title = originalTitle;
+  const getCurrentDocTypeForSave = () => {
+    if (harvestType === 'full') {
+      return activeSubTab === 'tank-fcr'
+        ? 'full_report'
+        : activeSubTab === 'uasf-rates'
+        ? 'full_uasf_rates'
+        : 'full_bill';
+    }
+
+    return activeSubTab === 'tank-fcr' ? 'middle_report' : activeSubTab === 'uasf-rates' ? 'uasf_rates' : 'middle_bill';
+  };
+
+  const persistCurrentDocument = async () => {
+    if (harvestType !== 'full') return;
+
+    const docType = getCurrentDocTypeForSave();
+    const docDataObj = {
+      bill_number: uasfBillNo,
+      date: new Date().toISOString().slice(0, 10),
+      site_id: siteId,
+      site_name: farmName,
+      buyer_name: buyingCompanyName,
+      factory_name: graderData.factory_name || '',
+      grader_name: graderName,
+      supervisor_name: supervisorName,
+      tank_name: harvestTanks.map((t) => `Tank ${t.tank_name}`).join(', ') || 'Tank A1',
+      harvest_type: 'full',
+      total_kgs: totalHarvestKgs,
+      price_per_kg: Number(pricePerKg) || 0,
+      total_amount: companyTotalAmount,
+      paid_amount: 0,
+      balance_amount: companyTotalAmount,
+      savedTanks: harvestTanks,
+      weightRows,
+      bill_photo: uploadedPhotoPreview,
+      spotPhotos: spotPaymentPhotos,
+      medicalLogs,
+      supervisor_signature: billingData.supervisor_signature || null,
+      grader_signature: graderData.grader_signature || null,
+      grader_rows: graderData.grader_rows || null,
+      worker_rows: labourData.worker_rows || null,
+    };
+
+    try {
+      const { data: inserted, error: insertErr } = await supabase.from(TABLES.bills).insert({
+        site_id: siteId,
+        bill_number: uasfBillNo,
+        type: 'harvest',
+        harvest_type: 'full',
+        report_type: docType,
+        date: new Date().toISOString().slice(0, 10),
+        tank_name: docDataObj.tank_name,
+        kgs: parseFloat(totalHarvestKgs.toFixed(3)),
+        total_amount: Math.round(companyTotalAmount),
+        paid_amount: 0,
+        balance_amount: Math.round(companyTotalAmount),
+        status: 'pending',
+        buyer_name: buyingCompanyName,
+        document_data: docDataObj,
+      }).select();
+
+      if (insertErr) throw insertErr;
+
+      try {
+        const newBill = Array.isArray(inserted) ? inserted[0] : inserted;
+        const newBillId = newBill?.id;
+        if (newBillId && generatedBill?.id) {
+          await supabase.from(TABLES.harvestEntries).update({ bill_id: newBillId }).eq('bill_id', generatedBill.id).eq('site_id', siteId);
+        }
+      } catch (upErr) {
+        console.warn('Failed to backfill harvest_entries with new bill_id:', upErr);
+      }
+    } catch (err) {
+      console.warn('Full Harvest document save skipped:', err);
+    }
+  };
+
+  const handleDownloadPDF = async (tabName) => {
+    if (harvestType === 'full') {
+      await persistCurrentDocument();
+    }
+
+    const getPrintableId = () => {
+      if (activeSubTab === 'harvest-bill') return 'printable-bill-document';
+      if (activeSubTab === 'tank-fcr') return 'printable-report-document';
+      if (activeSubTab === 'uasf-rates') return 'printable-uasf-document';
+      return 'printable-bill-document';
+    };
+
+    const elementId = getPrintableId();
+    const filename = `${tabName.replace(/\s+/g, '_')}_${uasfBillNo}.pdf`;
+    const isLandscape = activeSubTab === 'tank-fcr';
+    try {
+      await downloadPDF(elementId, { filename, orientation: isLandscape ? 'landscape' : 'portrait' });
+    } catch (err) {
+      console.warn('PDF export failed, falling back to print', err);
+      const originalTitle = document.title;
+      document.title = filename;
+      window.print();
+      document.title = originalTitle;
+    }
   };
 
   // Helper values
@@ -842,7 +1017,7 @@ export default function ReviewAndPayment({
         {/* SUB-TAB 3: UASF RATES                                                     */}
         {/* ========================================================================= */}
         {activeSubTab === 'uasf-rates' && (
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left">
+          <div id="printable-uasf-document" className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
                 <span className="text-[10px] font-extrabold tracking-widest text-amber-600 uppercase bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
@@ -1007,7 +1182,17 @@ export default function ReviewAndPayment({
               </div>
             </div>
 
-            {/* Spot Payment Screenshots Photo Uploader */}
+            {uploadedPhotoPreview && (
+              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200 text-left space-y-3">
+                <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
+                  <span>📷</span> Harvest Bill Uploaded Photo
+                </h4>
+                <div className="rounded-xl overflow-hidden border border-blue-300 bg-white">
+                  <img src={uploadedPhotoPreview} alt="Harvest Bill Uploaded Photo" className="w-full max-h-72 object-contain" />
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 text-left space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                 <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
@@ -1019,24 +1204,26 @@ export default function ReviewAndPayment({
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={handlePhotoUpload}
+                    onChange={handleSpotPhotoUpload}
                     className="hidden"
                   />
                 </label>
               </div>
 
-              {uploadedPhotoPreview ? (
+              {spotPaymentPhotos.length > 0 ? (
                 <div className="flex items-center gap-3 flex-wrap">
-                  <div className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md">
-                    <img
-                      src={uploadedPhotoPreview}
-                      alt="Spot Payment Screenshot"
-                      className="h-32 object-cover"
-                    />
-                    <span className="absolute bottom-1 right-1 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">
-                      ✓ Uploaded
-                    </span>
-                  </div>
+                  {spotPaymentPhotos.map((photo) => (
+                    <div key={photo.id} className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md">
+                      <img src={photo.src} alt={photo.name} className="h-32 object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSpotPhoto(photo.id)}
+                        className="absolute top-1 right-1 bg-red-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-xs text-slate-500 italic">
@@ -1066,7 +1253,12 @@ export default function ReviewAndPayment({
             </button>
             <button
               type="button"
-              onClick={onGenerateBill}
+              onClick={async () => {
+                if (harvestType === 'full') {
+                  await persistCurrentDocument();
+                }
+                await onGenerateBill();
+              }}
               className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-extrabold text-xs shadow-md transition"
             >
               🧾 Generate Official Harvest Bill

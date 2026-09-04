@@ -12,7 +12,7 @@ import TankInsights from './TankInsights';
  * Sections → Tanks (with area) → per-tank seed data table.
  */
 export default function Sections() {
-  const { siteId } = useSite();
+  const { siteId, selectedSectionId, selectSection } = useSite();
   const [sections, setSections] = useState([]);
   const [tanksBySection, setTanksBySection] = useState({});
   const [activeSection, setActiveSection] = useState(null);
@@ -42,7 +42,11 @@ export default function Sections() {
       });
       setTanksBySection(map);
       setLoading(false);
-      if (secs?.length) setActiveSection(secs[0]);
+      if (secs?.length) {
+        const found = secs.find((s) => s.id === selectedSectionId) || secs[0];
+        setActiveSection(found);
+        selectSection(found.id);
+      }
     })();
   }, [siteId]);
 
@@ -79,6 +83,7 @@ export default function Sections() {
             active={activeSection?.id === s.id}
             onSelect={(sec) => {
               setActiveSection(sec);
+              selectSection(sec.id);
               setActiveTank(null);
             }}
           />

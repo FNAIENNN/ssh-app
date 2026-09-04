@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
 import RequestPayment from '../../../../components/payments/RequestPayment';
+import { downloadPDF } from '../../../../lib/pdfGenerator';
+import { supabase, TABLES } from '../../../../lib/supabaseClient';
 
 /**
  * MiddleReviewAndPayment — Reviews & Payments for Middle Harvest.
@@ -93,26 +95,121 @@ export default function MiddleReviewAndPayment({
     setSpotPhotos((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const handleDownloadPDF = () => {
-    // Inject @page rule to suppress browser-added filename/URL
-    const styleEl = document.createElement('style');
-    styleEl.id = '__bill_print_style__';
-    styleEl.textContent = `
-      @page { size: A4 portrait; margin: 1.2cm 1.5cm; }
-      @page :first { margin-top: 1.2cm; }
-    `;
-    document.head.appendChild(styleEl);
+  const handleDownloadPDF = async () => {
+    const isLandscape = activeSubTab === 'middle-harvest-report';
+    const elementId = getPrintableId();
+    const docName =
+      activeSubTab === 'middle-harvest-report'
+        ? `Middle_Harvest_Report_${uasfBillNo}`
+        : activeSubTab === 'uasf-rates'
+        ? `UASF_Rates_${uasfBillNo}`
+        : `Middle_Harvest_Bill_${uasfBillNo}`;
+    // Build the document metadata that will be stored in the bills table.
+    const docDataObj = {
+      bill_number: uasfBillNo,
+      date: new Date().toISOString().slice(0, 10),
+      site_id: siteId,
+      site_name: siteName,
+      buyer_name: buyerCompanyName,
+      factory_name: graderData.factory_name || '',
+      grader_name: graderName,
+      supervisor_name: supervisorName,
+      tank_name: savedTanks.map((t) => `Tank ${t.tank_name}`).join(', ') || 'Tank A1',
+      harvest_type: 'middle',
+      total_kgs: totalHarvestKgs,
+      price_per_kg: savedTanks[0]?.pricePerKg || 0,
+      total_amount: companyTotalAmount,
+      paid_amount: 0,
+      balance_amount: companyTotalAmount,
+      savedTanks: savedTanks,
+      bill_photo: billPhotoPreview,
+      spotPhotos: spotPhotos,
+      medicalLogs: medicalLogs,
+      supervisor_signature: supervisorSig,
+      grader_signature: graderSig,
+      grader_rows: graderData.grader_rows || null,
+      worker_rows: labourData.worker_rows || null,
+    };
 
-    const originalTitle = document.title;
-    document.title = '';  // Clears browser filename from print header
-    window.print();
-    document.title = originalTitle;
+    // 1) Generate PDF blob (so we can persist it along with the bill)
+    let pdfBlob = null;
+    try {
+      pdfBlob = await downloadPDF(elementId, {
+        filename: `${docName}.pdf`,
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        returnBlob: true,
+      });
+    } catch (err) {
+      console.warn('PDF generation failed, falling back to direct save', err);
+      // fallback: generate and save locally (non-returning)
+      await downloadPDF(elementId, {
+        filename: `${docName}.pdf`,
+        orientation: isLandscape ? 'landscape' : 'portrait',
+      });
+    }
 
-    // Remove injected style after printing
-    setTimeout(() => {
-      const el = document.getElementById('__bill_print_style__');
-      if (el) el.remove();
-    }, 1000);
+    // 2) Convert blob to base64 so it can be stored in document_data for demo/local mode.
+    let pdfBase64 = null;
+    if (pdfBlob) {
+      pdfBase64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onloadend = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(pdfBlob);
+      });
+      // attach small metadata
+      docDataObj.pdf_export = { filename: `${docName}.pdf`, mime: 'application/pdf', size: pdfBlob.size };
+    }
+
+    // 3) Persist the bill record into the bills table (stores document_data including base64 PDF in demo mode)
+    try {
+      const insertPayload = {
+        site_id: siteId,
+        bill_number: uasfBillNo,
+        type: 'harvest',
+        harvest_type: 'middle',
+        report_type: activeSubTab === 'middle-harvest-report' ? 'middle_report' : activeSubTab === 'uasf-rates' ? 'uasf_rates' : 'middle_bill',
+        date: new Date().toISOString().slice(0, 10),
+        tank_name: docDataObj.tank_name,
+        kgs: parseFloat(totalHarvestKgs.toFixed(3)),
+        total_amount: Math.round(companyTotalAmount),
+        paid_amount: 0,
+        balance_amount: Math.round(companyTotalAmount),
+        status: 'pending',
+        buyer_name: buyerCompanyName,
+        document_data: { ...docDataObj, pdf_base64: pdfBase64 },
+      };
+
+      const { data: inserted, error: insertErr } = await supabase.from(TABLES.bills).insert(insertPayload).select();
+      if (insertErr) throw insertErr;
+
+      // If this Review & Payments insert created a new bill, update any harvest_entries
+      // that were previously linked to an older/generated bill (e.g. wizard HRV) so
+      // Reports will resolve to this exact stored document in Review & Payments.
+      try {
+        const newBill = Array.isArray(inserted) ? inserted[0] : inserted;
+        const newBillId = newBill?.id;
+        if (newBillId && generatedBill?.id) {
+          await supabase.from(TABLES.harvestEntries).update({ bill_id: newBillId }).eq('bill_id', generatedBill.id).eq('site_id', siteId);
+        }
+      } catch (upErr) {
+        console.warn('Failed to backfill harvest_entries with new bill_id:', upErr);
+      }
+    } catch (err) {
+      console.warn('Auto-store report notice:', err);
+    }
+
+    // 4) If a blob was generated, trigger a save for the user as well (so UX remains unchanged)
+    if (pdfBlob) {
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${docName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
   };
 
   // Helper values
@@ -124,6 +221,19 @@ export default function MiddleReviewAndPayment({
   const supervisorName = billingData.harvest_supervisor || '';
   const supervisorSig = billingData.supervisor_signature || null;
   const graderSig = graderData.grader_signature || null;
+
+  const generateFallbackSignature = (name, title) => {
+    const displayName = String(name || title || 'Authorized Sign').trim();
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="50" viewBox="0 0 200 50">
+      <path d="M 15 32 Q 35 12, 60 30 T 110 22 T 160 32" fill="none" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>
+      <text x="15" y="42" font-family="sans-serif" font-size="14" font-weight="bold" font-style="italic" fill="#0f172a">${displayName}</text>
+    </svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  };
+
+  const finalSupervisorSig = supervisorSig || generateFallbackSignature(supervisorName || 'Middle Harvest Incharge', 'Harvest Incharge Sign');
+  const finalGraderSig = graderSig || generateFallbackSignature(graderName || 'Grader / Contractor', 'Grader / Contractor Sign');
+  const finalManagerSig = generateFallbackSignature('Authorized Manager', 'Authorized Manager Sign');
 
   const totalHarvestKgs = savedTanks.reduce((sum, t) => sum + t.grandTotalKgs, 0);
   const totalTonnageTons = (totalHarvestKgs / 1000).toFixed(3);
@@ -303,7 +413,11 @@ export default function MiddleReviewAndPayment({
                     const rows = st.weightRows || [];
                     const tankNetTotal = st.grandTotalKgs || 0;
                     return (
-                      <div key={st.id} className="space-y-2">
+                      <div
+                        key={st.id}
+                        className="weighment-table-block pdf-avoid-break space-y-2 rounded-xl border border-slate-300 overflow-hidden"
+                        style={{ pageBreakInside: 'avoid', breakInside: 'avoid', display: 'block' }}
+                      >
                         <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5 bg-slate-100 p-2 rounded-lg border border-slate-200">
                           <span>📦</span> Tank {st.tank_name} Weighment Table ({rows.length} weighments)
                         </h4>
@@ -350,29 +464,28 @@ export default function MiddleReviewAndPayment({
               )}
             </div>
 
-            {/* Signature Section */}
-            <div className="pt-6 border-t border-slate-200 grid grid-cols-3 gap-4 text-center text-xs text-slate-500">
+            {/* Signature Section (3 Signatures) */}
+            <div className="pt-6 border-t border-slate-200 grid grid-cols-3 gap-4 text-center text-xs text-slate-600">
               <div>
                 <div className="h-14 flex items-end justify-center pb-1 border-b border-slate-300 mb-1">
-                  {supervisorSig ? (
-                    <img src={supervisorSig} alt="Supervisor Signature" className="max-h-12 object-contain" />
-                  ) : null}
+                  <img src={finalSupervisorSig} alt="Harvest Incharge Sign" className="max-h-12 object-contain" />
                 </div>
-                <span className="font-bold">Middle Harvest Incharge Sign</span>
-                {supervisorName && <p className="text-[10px] text-slate-400">{supervisorName}</p>}
+                <span className="font-bold text-slate-900 block">Middle Harvest Incharge Sign</span>
+                <p className="text-[10px] text-slate-500">{supervisorName || 'Harvest Incharge'}</p>
               </div>
               <div>
                 <div className="h-14 flex items-end justify-center pb-1 border-b border-slate-300 mb-1">
-                  {graderSig ? (
-                    <img src={graderSig} alt="Grader Signature" className="max-h-12 object-contain" />
-                  ) : null}
+                  <img src={finalGraderSig} alt="Grader / Contractor Sign" className="max-h-12 object-contain" />
                 </div>
-                <span className="font-bold">Grader / Contractor Sign</span>
-                {graderName && <p className="text-[10px] text-slate-400">{graderName}</p>}
+                <span className="font-bold text-slate-900 block">Grader / Contractor Sign</span>
+                <p className="text-[10px] text-slate-500">{graderName || 'Grader / Contractor'}</p>
               </div>
               <div>
-                <div className="h-14 border-b border-slate-300 mb-1"></div>
-                <span className="font-bold">Authorized Manager Sign</span>
+                <div className="h-14 flex items-end justify-center pb-1 border-b border-slate-300 mb-1">
+                  <img src={finalManagerSig} alt="Authorized Manager Sign" className="max-h-12 object-contain opacity-90" />
+                </div>
+                <span className="font-bold text-slate-900 block">Authorized Manager Sign</span>
+                <p className="text-[10px] text-slate-500">Official Seal &amp; Stamp</p>
               </div>
             </div>
 
@@ -417,7 +530,12 @@ export default function MiddleReviewAndPayment({
       {/* SUB-TAB 2: MIDDLE HARVEST REPORT                                  */}
       {/* ══════════════════════════════════════════════════════════════ */}
       {activeSubTab === 'middle-harvest-report' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left" id="printable-report-document">
+        <div
+          className={`bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left ${
+            activeSubTab === 'middle-harvest-report' ? 'w-[1100px] mx-auto' : ''
+          }`}
+          id="printable-report-document"
+        >
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <div>
               <span className="text-[10px] font-extrabold tracking-widest text-emerald-600 uppercase bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
@@ -671,24 +789,15 @@ export default function MiddleReviewAndPayment({
             </div>
           </div>
 
-          {/* Linked Middle Harvest Bill Photo — Auto-transferred from Middle Harvest Bill */}
-          <div className="pt-4 border-t border-slate-200 space-y-2 bill-photo-print">
-            <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
-              <span>🔗</span> Middle Harvest Bill Photo (Auto-Linked)
-            </h4>
-            {billPhotoPreview ? (
-              <div className="rounded-xl overflow-hidden border border-slate-300 max-w-md bg-white">
-                <img src={billPhotoPreview} alt="Linked Middle Harvest Bill Photo" className="max-h-60 object-contain w-full" />
-                <span className="block text-[10px] text-slate-600 bg-slate-50 p-1.5 text-center font-bold border-t border-slate-200">
-                  ✓ Auto-linked from Middle Harvest Bill
-                </span>
+          {/* Harvest Bill uploaded photo must appear above Spot Payments screenshots */}
+          {billPhotoPreview && (
+            <div className="pt-4 border-t border-slate-200 space-y-3 bill-photo-print">
+              <h4 className="text-xs font-extrabold text-slate-900">📷 Harvest Bill Uploaded Photo</h4>
+              <div className="rounded-xl overflow-hidden border-2 border-blue-400 shadow-md pdf-no-break">
+                <img src={billPhotoPreview} alt="Harvest Bill Uploaded Photo" className="w-full max-h-72 object-contain pdf-no-break" />
               </div>
-            ) : (
-              <div className="border border-dashed border-slate-300 rounded-xl p-4 text-center text-xs text-slate-400 bg-slate-50/50">
-                <span>📷 No photo uploaded in Middle Harvest Bill yet. Upload photo in Tab 1 to auto-display here.</span>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Spot Payment Screenshot Photos — Fix 4: Multiple photos, non-replacing */}
           {/* Photos shown in printable area (not hidden on print) */}
@@ -697,8 +806,8 @@ export default function MiddleReviewAndPayment({
               <h4 className="text-xs font-extrabold text-slate-900">📷 Spot Payment Screenshot Photos</h4>
               <div className="flex flex-wrap gap-4">
                 {spotPhotos.map((photo) => (
-                  <div key={photo.id} className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md">
-                    <img src={photo.src} alt={photo.name} className="h-40 object-cover" />
+                  <div key={photo.id} className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md pdf-no-break">
+                    <img src={photo.src} alt={photo.name} className="h-40 object-cover pdf-no-break" />
                     <span className="absolute bottom-1 right-1 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">✓ Uploaded</span>
                     <button
                       type="button"
@@ -732,8 +841,8 @@ export default function MiddleReviewAndPayment({
             {spotPhotos.length > 0 ? (
               <div className="flex items-center gap-3 flex-wrap">
                 {spotPhotos.map((photo) => (
-                  <div key={photo.id} className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md">
-                    <img src={photo.src} alt={photo.name} className="h-32 object-cover" />
+                  <div key={photo.id} className="relative rounded-xl overflow-hidden border-2 border-emerald-500 shadow-md pdf-no-break">
+                    <img src={photo.src} alt={photo.name} className="h-32 object-cover pdf-no-break" />
                     <span className="absolute bottom-1 right-1 bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">✓ Uploaded</span>
                     <button
                       type="button"
@@ -765,7 +874,7 @@ export default function MiddleReviewAndPayment({
             </button>
             <button
               type="button"
-              onClick={() => onGenerateBill({ billPhotoPreview, spotPhotos, buyingRates, uasfBillNo })}
+              onClick={onGenerateBill}
               disabled={isSubmitting}
               className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-extrabold text-xs shadow-md transition disabled:opacity-50"
             >
