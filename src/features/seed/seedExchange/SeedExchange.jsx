@@ -228,13 +228,42 @@ export default function SeedExchange() {
       setTanks(tData ?? []);
     })();
 
-    // Load saved seed exchange bills ledger from LocalStorage
-    try {
-      const storedLedger = JSON.parse(localStorage.getItem(`seed_exchanges_ledger_${siteId}`) || '[]');
+    // Load saved seed exchange bills ledger from LocalStorage & DB
+    (async () => {
+      let storedLedger = [];
+      try {
+        storedLedger = JSON.parse(localStorage.getItem(`seed_exchanges_ledger_${siteId}`) || '[]');
+      } catch {
+        storedLedger = [];
+      }
+
+      try {
+        const { data: dbExchanges } = await supabase
+          .from(TABLES.seedExchanges)
+          .select('*')
+          .eq('site_id', siteId)
+          .order('created_at', { ascending: false });
+
+        if (dbExchanges && dbExchanges.length > 0) {
+          dbExchanges.forEach((d) => {
+            if (!storedLedger.some((c) => c.id === d.id || (c.bill_number && c.bill_number === d.bill_number))) {
+              storedLedger.push({
+                ...d,
+                bill_number: d.bill_number || `EXC-${d.id.slice(0, 6).toUpperCase()}`,
+                from_tank_name: d.from_snapshot?.name || 'From Tank',
+                to_tank_name: d.to_snapshot?.name || 'To Tank',
+                total_weight_kg: Number(d.total_kgs || d.no_of_kgs || 0),
+                total_pieces: Number(d.total_exchanged || 0),
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('DB load note:', err);
+      }
+
       setSavedExchangesLedger(storedLedger);
-    } catch {
-      setSavedExchangesLedger([]);
-    }
+    })();
   }, [siteId]);
 
   // Derived Tanks for From/To Section
@@ -643,17 +672,19 @@ export default function SeedExchange() {
     return suppliers.find((s) => s.id === selectedSupplierId);
   }, [suppliers, selectedSupplierId]);
 
-  const handlePaymentRequestSubmit = () => {
-    if (!selectedWorkerBillIds.length) {
-      toast.error('Select at least one seed exchange tank/bill first');
-      return;
-    }
+  const isWorkerDetailsValid = useMemo(() => {
+    return wagesRows.some((r) => Number(r.qty) > 0 && Number(r.amount) > 0) || Boolean(submittedWorkerPayment);
+  }, [wagesRows, submittedWorkerPayment]);
+
+  const handlePaymentRequestSubmit = async () => {
     const selectedBills = savedExchangesLedger.filter((b) => selectedWorkerBillIds.includes(b.id));
-    const linkedBillNums = selectedBills.map((b) => b.bill_number).join(', ');
+    const linkedBillNums = selectedBills.map((b) => b.bill_number).join(', ') || 'Direct Seed Exchange';
 
     const requestPayload = {
       id: `wrk-req-${Date.now()}`,
+      site_id: siteId,
       bill_number: `WRK-${Date.now().toString().slice(-6)}`,
+      type: 'outside_worker',
       linked_exchange_bills: linkedBillNums,
       supplier_name: selectedSupplierObj?.name || 'Worker Supplier',
       supplier_details: selectedSupplierObj,
@@ -667,8 +698,15 @@ export default function SeedExchange() {
     try {
       const existingReqs = JSON.parse(localStorage.getItem('seed_exchange_worker_requests') || '[]');
       localStorage.setItem('seed_exchange_worker_requests', JSON.stringify([requestPayload, ...existingReqs]));
-    } catch {
-      // fallback
+
+      await supabase.from(TABLES.exchangeWorkers).insert({
+        site_id: siteId,
+        mestri_name: selectedSupplierObj?.name || 'Worker Supplier',
+        line_items: wagesRows,
+        grand_total: workerTotalAmount,
+      });
+    } catch (err) {
+      console.warn('Worker payment save note:', err);
     }
 
     toast.success(`Worker Payment Request Submitted! Total: ₹${workerTotalAmount.toLocaleString('en-IN')}`);
@@ -1476,20 +1514,18 @@ export default function SeedExchange() {
                 </button>
                 <button
                   type="button"
-                  disabled={selectedWorkerBillIds.length === 0}
                   onClick={() => setWorkerStep('workerDetails')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black transition ${
-                    workerStep === 'workerDetails' ? 'bg-emerald-700 text-white shadow-sm' : selectedWorkerBillIds.length > 0 ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'
+                    workerStep === 'workerDetails' ? 'bg-emerald-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
                   2. Worker Payments
                 </button>
                 <button
                   type="button"
-                  disabled={!isWorkerDetailsValid}
                   onClick={() => setWorkerStep('overallView')}
                   className={`flex-1 py-2 rounded-xl text-xs font-black transition ${
-                    workerStep === 'overallView' ? 'bg-blue-700 text-white shadow-sm' : isWorkerDetailsValid ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 cursor-not-allowed'
+                    workerStep === 'overallView' ? 'bg-blue-700 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
                   3. Overall View
@@ -1503,12 +1539,19 @@ export default function SeedExchange() {
                     <span>🗄️</span> Select Submitted Seed Exchange Tanks / Bills
                   </h3>
                   <p className="text-xs text-slate-500">
-                    All submitted seed exchange tanks data are saved below. Select multiple tanks to calculate worker payments.
+                    All submitted seed exchange tanks data are saved below. Select multiple tanks to calculate worker payments, or proceed directly to enter general exchange wages.
                   </p>
 
                   {savedExchangesLedger.length === 0 ? (
-                    <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500">
-                      No submitted seed exchange bills available yet. Complete Data Entry step first.
+                    <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 space-y-3">
+                      <p>No submitted seed exchange bills in this session yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerStep('workerDetails')}
+                        className="px-4 py-2 bg-emerald-700 text-white font-extrabold rounded-xl hover:bg-emerald-600 shadow-sm"
+                      >
+                        Enter Worker Wages Directly →
+                      </button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1548,15 +1591,12 @@ export default function SeedExchange() {
                   <div className="flex justify-end pt-4 border-t border-slate-100">
                     <button
                       type="button"
-                      disabled={selectedWorkerBillIds.length === 0}
                       onClick={() => setWorkerStep('workerDetails')}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
-                        selectedWorkerBillIds.length > 0
-                          ? 'bg-emerald-700 hover:bg-emerald-600 text-white'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
+                      className="px-6 py-3 rounded-xl font-black text-xs transition shadow-md bg-emerald-700 hover:bg-emerald-600 text-white"
                     >
-                      Proceed to Worker Payments Details →
+                      {selectedWorkerBillIds.length > 0
+                        ? `Proceed to Worker Payments (${selectedWorkerBillIds.length} Tanks Selected) →`
+                        : 'Proceed to Worker Payments Details →'}
                     </button>
                   </div>
                 </div>

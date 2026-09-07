@@ -339,6 +339,8 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                         <div className="space-y-1 text-xs text-slate-600">
                           <p>DOC: <span className="font-bold text-slate-900">{doc} days</span></p>
                           <p>Seed: <span className="font-bold text-slate-900">{tk.quantity?.toLocaleString('en-IN') || '0'} PL</span></p>
+                          <p>Tank Feed: <span className="font-bold text-slate-900">{tk.feed || tk.tank_feed || tk.total_feed || '0'} kg</span></p>
+                          <p>Latest Count: <span className="font-bold text-slate-900">{tk.latest_count || tk.count || 'N/A'}</span></p>
                           <p>Hatchery: {tk.hatchery || 'N/A'}</p>
                           <p>Area: {tk.area_acres} Acres</p>
                         </div>
@@ -585,8 +587,7 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
               graderData={graderData}
               labourData={labourData}
               generatedBill={generatedBill}
-              onGenerateBill={async () => {
-                // Basic bill generation
+              onGenerateBill={async (payload = {}) => {
                 setIsSubmitting(true);
                 try {
                   const billNum = `MHV${new Date().toISOString().slice(0,10).replace(/-/g,'')}${Math.floor(1000+Math.random()*9000)}`;
@@ -594,27 +595,46 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                   const totalKgs = selectedBillingTanks.reduce((sum, t) => sum + t.grandTotalKgs, 0);
                   const tankNames = selectedBillingTanks.map((t) => `Tank ${t.tank_name}`).join(', ');
                   const todayDate = new Date().toISOString().slice(0, 10);
+                  
+                  const billRecord = {
+                    site_id: siteId,
+                    bill_number: billNum,
+                    type: 'harvest',
+                    harvest_type: 'middle',
+                    date: todayDate,
+                    tank_name: tankNames,
+                    kgs: parseFloat(totalKgs.toFixed(3)),
+                    total_amount: Math.round(totalAmt),
+                    paid_amount: 0,
+                    balance_amount: Math.round(totalAmt),
+                    status: 'pending',
+                    buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
+                    created_by: user?.id,
+                    bill_photo: payload.billPhotoPreview || null,
+                    spot_photos: payload.spotPhotos || [],
+                    uasf_bill_no: payload.uasfBillNo || '',
+                    buying_rates: payload.buyingRates || {},
+                    harvest_details: {
+                      savedTanks: selectedBillingTanks,
+                      billingData,
+                      graderData,
+                      labourData,
+                      billPhoto: payload.billPhotoPreview || null,
+                      spotPhotos: payload.spotPhotos || [],
+                      uasfBillNo: payload.uasfBillNo || '',
+                      buyingRates: payload.buyingRates || {},
+                    },
+                  };
+
                   const { data: billRows, error: billErr } = await supabase
                     .from(TABLES.bills)
-                    .insert({
-                      site_id: siteId,
-                      bill_number: billNum,
-                      type: 'harvest',
-                      harvest_type: 'middle',
-                      date: todayDate,
-                      tank_name: tankNames,
-                      kgs: parseFloat(totalKgs.toFixed(3)),
-                      total_amount: Math.round(totalAmt),
-                      paid_amount: 0,
-                      balance_amount: Math.round(totalAmt),
-                      status: 'pending',
-                      buyer_name: graderData.buyer_name || billingData.buying_company,
-                      created_by: user?.id,
-                    })
+                    .insert(billRecord)
                     .select();
+
                   if (billErr) throw billErr;
-                  setGeneratedBill(Array.isArray(billRows) ? billRows[0] : billRows);
-                  toast.success(`Middle Harvest Bill #${billNum} generated & saved to Reports!`);
+                  const finalBill = (Array.isArray(billRows) ? billRows[0] : billRows) || billRecord;
+                  setGeneratedBill(finalBill);
+                  toast.success(`Middle Harvest Bill #${billNum} generated & stored in Reports archive!`);
                 } catch (err) {
                   toast.error(err.message || 'Failed to generate bill');
                 } finally {

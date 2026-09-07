@@ -14,6 +14,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { supabase } from '../../../../lib/supabaseClient';
+import CameraCapture from '../../../../components/ui/CameraCapture';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -28,8 +30,9 @@ function buildAvailableTanks(activeOrder, overrideTankQtys = null) {
     activeOrder.selected_tanks.length > 0
   ) {
     return activeOrder.selected_tanks.map((t) => {
-      const initialQty = overrideTankQtys ? (overrideTankQtys[t.id] || 0) : (Number(t.qty) || 0);
+      const initialQty = overrideTankQtys ? (overrideTankQtys[t.id] || 0) : (Number(t.qty) || Number(t.quantity) || 0);
       return {
+        ...t,
         id: t.id,
         name: t.name,
         initialQty,
@@ -71,7 +74,7 @@ export default function SeedVanPlanStep1({
   useEffect(() => {
     console.log('--- SEED VAN PLAN LOADED / UPDATED ---');
     availableTanks.forEach(t => {
-      console.log(`Tank: ${t.name} | Calculated Remaining Available for Van: ${t.initialQty}`);
+      console.log();
     });
   }, [availableTanks]);
   // ---------------------------
@@ -86,8 +89,39 @@ export default function SeedVanPlanStep1({
     return [];
   });
 
-  // All tanks available in dropdown = selected + newly added via modal
-  const allTanks = useMemo(() => [...availableTanks, ...extraTanks], [availableTanks, extraTanks]);
+  const [tankMods, setTankMods] = useState(() => initialVanData?.tankMods || {});
+
+  // Active modals
+  const [activeModal, setActiveModal] = useState(null);
+  const [modalQty, setModalQty] = useState('');
+  const [modalPackets, setModalPackets] = useState('');
+  const [modalTargetTank, setModalTargetTank] = useState('');
+  const [modalReason, setModalReason] = useState('');
+  const [modalPhoto, setModalPhoto] = useState(null);
+  const [modalVideo, setModalVideo] = useState(null);
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
+  const [isCapturingVideo, setIsCapturingVideo] = useState(false);
+
+  const baseTanks = useMemo(() => [...availableTanks, ...extraTanks], [availableTanks, extraTanks]);
+
+  // All tanks available in dropdown = selected + newly added via modal + applied mods
+  const allTanks = useMemo(() => {
+    return baseTanks.map(t => {
+      const mod = tankMods[t.name];
+      if (mod) {
+        return {
+          ...t,
+          returns: [...(t.returns || []), ...(mod.returns || [])],
+          transfers: [...(t.transfers || []), ...(mod.transfers || [])],
+          returnedQuantity: (Number(t.returnedQuantity) || 0) + (mod.returnedQuantity || 0),
+          transferredQuantity: (Number(t.transferredQuantity) || 0) + (mod.transferredQuantity || 0),
+          status: mod.status || t.status,
+          initialQty: Number(t.initialQty) + (mod.receivedQuantity || 0)
+        };
+      }
+      return t;
+    });
+  }, [baseTanks, tankMods]);
 
   // Drum list — restores from saved van_plan or starts with one empty drum
   const [drums, setDrums] = useState(() => {
@@ -291,16 +325,98 @@ export default function SeedVanPlanStep1({
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
-  function handleNext() {
-    if (!isValid) return;
-    const completedDrums = drums.filter((d) => d.tankName && Number(d.count) > 0);
-    onNext({
-      drums: completedDrums.map((d) => ({ drumNum: d.drumNum, tankName: d.tankName, count: Number(d.count) })),
-      grandTotal,
-      extraTanks,
-      availableTanks: allTanks,
-    });
-  }
+    const handleReturnSubmit = (tankName, qty, packets, maxQty, reason, photo, video) => {
+      const q = Number(qty);
+      const tankObj = allTanks.find(t => t.name === tankName);
+      const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
+
+      setTankMods(prev => {
+        const existing = prev[tankName] || {};
+        const newReturns = [...(existing.returns || []), { quantity: q, packets: packets ? Number(packets) : null, reason, photo, video }];
+        const newReturnedQty = (existing.returnedQuantity || 0) + q;
+        const totalTransferred = (existing.transferredQuantity || 0);
+        
+        const remaining = originalQty - newReturnedQty - totalTransferred;
+        const isComplete = remaining <= 0;
+
+        return {
+          ...prev,
+          [tankName]: {
+            ...existing,
+            returns: newReturns,
+            returnedQuantity: newReturnedQty,
+            status: isComplete ? 'Returned' : (existing.status || '')
+          }
+        };
+      });
+      setActiveModal(null);
+    };
+
+    const handleFileUpload = (e, setFileState) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFileState(reader.result);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
+    const handleTransferSubmit = (tankName, targetTank, qty, packets, maxQty, photo, video) => {
+      const q = Number(qty);
+      const cleanTarget = targetTank.trim().toUpperCase();
+      
+      const tankObj = allTanks.find(t => t.name === tankName);
+      const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
+
+      setExtraTanks(prev => {
+         if (!prev.some(t => t.name === cleanTarget) && !availableTanks.some(t => t.name === cleanTarget)) {
+           return [...prev, { id: `t-new-${Date.now()}`, name: cleanTarget, initialQty: 0 }];
+         }
+         return prev;
+      });
+      
+      setTankMods(prev => {
+        const existing = prev[tankName] || {};
+        const newTransfers = [...(existing.transfers || []), { target: cleanTarget, quantity: q, packets: packets ? Number(packets) : null, photo, video }];
+        const newTransferredQty = (existing.transferredQuantity || 0) + q;
+        const totalReturned = (existing.returnedQuantity || 0);
+        
+        const remaining = originalQty - totalReturned - newTransferredQty;
+        const isComplete = remaining <= 0;
+
+        const existingTarget = prev[cleanTarget] || {};
+        const newReceived = (existingTarget.receivedQuantity || 0) + q;
+
+        return {
+          ...prev,
+          [tankName]: {
+            ...existing,
+            transfers: newTransfers,
+            transferredQuantity: newTransferredQty,
+            status: isComplete ? 'Transferred' : (existing.status || '')
+          },
+          [cleanTarget]: {
+            ...existingTarget,
+            receivedQuantity: newReceived
+          }
+        };
+      });
+      setActiveModal(null);
+    };
+
+    function handleNext() {
+      if (!isValid) return;
+      const completedDrums = drums.filter((d) => d.tankName && Number(d.count) > 0);
+      onNext({
+        drums: completedDrums.map((d) => ({ drumNum: d.drumNum, tankName: d.tankName, count: Number(d.count) })),
+        grandTotal,
+        extraTanks,
+        availableTanks: allTanks,
+        tankMods,
+      });
+    }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -407,36 +523,180 @@ export default function SeedVanPlanStep1({
         </div>
       )}
 
-      {/* Tank Summary — shows remaining per tank */}
+      {/* Seed Van Plan Summary */}
       {allTanks.length > 0 && (
-        <div className="p-4 rounded-[12px] border bg-slate-50 space-y-2" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-[10px] uppercase tracking-wider font-bold text-text-muted">
-            Available Tanks — Remaining Quantities
+        <div className="p-4 rounded-[12px] border bg-slate-50 space-y-4" style={{ borderColor: 'var(--color-border)' }}>
+          <p className="text-[12px] uppercase tracking-wider font-extrabold text-slate-800 border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>
+            Seed Van Plan Summary
           </p>
-          <div className="flex flex-wrap gap-2">
-            {allTanks.map((t) => {
-              const rem = tankRemainingMap[t.name] ?? t.initialQty;
-              const exhausted = rem === 0;
+          <div className="space-y-6">
+            {['COMPLETED', 'PENDING', 'RETURNED', 'TRANSFERRED'].map(groupName => {
+              let allTransfers = [];
+              if (groupName === 'TRANSFERRED') {
+                allTanks.forEach(t => {
+                  if (t.transfers && t.transfers.length > 0) {
+                    t.transfers.forEach(tr => {
+                      allTransfers.push({
+                        source: t.name,
+                        target: tr.target,
+                        quantity: tr.quantity,
+                        packets: tr.packets
+                      });
+                    });
+                  }
+                });
+              }
+
+              const groupTanks = allTanks.filter(t => {
+                const baseRem = tankRemainingMap[t.name] ?? t.initialQty;
+                const effRem = baseRem - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
+                
+                const origRemaining = (t.initialQty || 0) - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
+
+                // A tank is ONLY RETURNED if its original remaining quantity is exhausted AND it has a return
+                const isFullyReturned = ((t.returnedQuantity || 0) > 0) && (origRemaining <= 0);
+                
+                // A tank is ONLY TRANSFERRED if its original remaining quantity is exhausted AND it has a transfer (and not already returned)
+                const isFullyTransferred = ((t.transferredQuantity || 0) > 0) && (origRemaining <= 0) && !isFullyReturned;
+
+                if (isFullyReturned) return groupName === 'RETURNED';
+                if (isFullyTransferred) return groupName === 'TRANSFERRED';
+
+                // If the tank is fully allocated to drums, it goes to COMPLETED
+                if (effRem <= 0) return groupName === 'COMPLETED';
+
+                // Otherwise, it is active
+                return groupName === 'PENDING';
+              });
+
+              if (groupTanks.length === 0 && allTransfers.length === 0) return null;
+
+              const colors = {
+                COMPLETED: 'text-emerald-700 bg-emerald-100 border-emerald-300',
+                PENDING: 'text-slate-700 bg-slate-100 border-slate-300',
+                RETURNED: 'text-red-700 bg-red-100 border-red-300',
+                TRANSFERRED: 'text-blue-700 bg-blue-100 border-blue-300'
+              };
+
               return (
-                <div
-                  key={t.id}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border"
-                  style={{
-                    background: exhausted ? '#f1f5f9' : 'var(--color-primary)10',
-                    color: exhausted ? '#94a3b8' : 'var(--color-primary)',
-                    borderColor: exhausted ? '#cbd5e1' : 'var(--color-primary)40',
-                  }}
-                >
-                  <span>{t.name}</span>
-                  <span
-                    className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold"
-                    style={{
-                      background: exhausted ? '#e2e8f0' : 'var(--color-primary)',
-                      color: exhausted ? '#94a3b8' : '#fff',
-                    }}
-                  >
-                    {exhausted ? '✓ Done' : `${rem.toLocaleString('en-IN')} rem`}
-                  </span>
+                <div key={groupName} className="space-y-3">
+                  <div className={`px-3 py-1 rounded-[6px] font-black text-[10px] border uppercase tracking-wider ${colors[groupName]} inline-block`}>
+                    {groupName}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {groupName === 'TRANSFERRED' && allTransfers.map((tr, idx) => (
+                      <div key={`tr-${idx}`} className="p-3 rounded-[8px] bg-blue-50 border border-blue-300 shadow-sm">
+                         <div className="flex justify-between items-center mb-2 border-b border-blue-200 pb-2">
+                           <span className="font-extrabold text-slate-800 text-sm">Transfer Record</span>
+                         </div>
+                         <div className="text-xs text-slate-600 space-y-1">
+                           <p>Source Tank: <span className="font-extrabold text-slate-800">{tr.source}</span></p>
+                           <p>Target Tank: <span className="font-extrabold text-slate-800">{tr.target}</span></p>
+                           <p>Transferred Quantity: <span className="font-extrabold text-blue-700">{Number(tr.quantity).toLocaleString('en-IN')} pcs</span></p>
+                           {tr.packets != null && <p>Transferred Packets: <span className="font-extrabold text-blue-700">{tr.packets}</span></p>}
+                         </div>
+                      </div>
+                    ))}
+
+                    {groupTanks.map(t => {
+                      const baseRem = tankRemainingMap[t.name] ?? t.initialQty;
+                      const effRem = baseRem - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
+                      const packets = t.numberOfPackets;
+                      
+                      const isReturned = groupName === 'RETURNED';
+                      const isTransferred = groupName === 'TRANSFERRED';
+                      
+                      const isPartialReturn = !isReturned && (t.returnedQuantity || 0) > 0;
+                      const isPartialTransfer = !isTransferred && (t.transferredQuantity || 0) > 0;
+
+                      let boxClass = 'bg-white border-slate-200';
+                      let headBorder = 'border-slate-200';
+                      if (isReturned) { boxClass = 'bg-red-50 border-red-300'; headBorder = 'border-red-200'; }
+                      if (isTransferred) { boxClass = 'bg-blue-50 border-blue-300'; headBorder = 'border-blue-200'; }
+
+                      return (
+                        <div key={t.id} className={`p-3 rounded-[8px] border shadow-sm ${boxClass}`}>
+                          <div className={`flex justify-between items-center mb-2 border-b pb-2 ${headBorder}`}>
+                             <span className="font-extrabold text-slate-800 text-sm">{t.name}</span>
+                             <div className="flex gap-1 items-center">
+                               {isReturned && (
+                                 <span className="text-[10px] font-black uppercase text-red-600 bg-red-100 px-2 py-0.5 rounded border border-red-200">
+                                   Returned
+                                 </span>
+                               )}
+                               {isPartialReturn && (
+                                 <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                   Partial Return
+                                 </span>
+                               )}
+                               {isTransferred && (
+                                 <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                                   Transferred
+                                 </span>
+                               )}
+                               {isPartialTransfer && (
+                                 <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                   Partial Transfer
+                                 </span>
+                               )}
+                             </div>
+                          </div>
+
+                          {groupName === 'PENDING' && (
+                            <div className="text-xs text-slate-600 space-y-1">
+                              {((t.returnedQuantity || 0) > 0 || (t.transferredQuantity || 0) > 0) ? (
+                                <>
+                                  <p>Original: <span className="font-extrabold text-slate-800">{Number(baseRem).toLocaleString('en-IN')} pcs</span></p>
+                                  {(t.returnedQuantity || 0) > 0 && (
+                                    <p>Returned: <span className="font-extrabold text-red-700">{Number(t.returnedQuantity).toLocaleString('en-IN')} pcs</span></p>
+                                  )}
+                                  {(t.transferredQuantity || 0) > 0 && (
+                                    <p>Transferred: <span className="font-extrabold text-blue-700">{Number(t.transferredQuantity).toLocaleString('en-IN')} pcs</span></p>
+                                  )}
+                                  <p>Remaining: <span className="font-extrabold text-emerald-700">{effRem.toLocaleString('en-IN')} pcs</span></p>
+                                </>
+                              ) : (
+                                <p>Quantity: <span className="font-extrabold text-slate-800">{effRem.toLocaleString('en-IN')} pcs</span></p>
+                              )}
+                              {packets != null && <p>Packets: <span className="font-extrabold text-slate-800">{packets}</span></p>}
+                              
+                              <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100">
+                                <button onClick={() => { setActiveModal({ type: 'return', tankName: t.name, maxQty: effRem }); setModalQty(''); setModalPackets(''); setModalReason(''); setModalPhoto(null); setModalVideo(null); setIsCapturingPhoto(false); setIsCapturingVideo(false); }} className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition">
+                                   Return
+                                </button>
+                                <button onClick={() => { setActiveModal({ type: 'transfer', tankName: t.name, maxQty: effRem }); setModalQty(''); setModalPackets(''); setModalTargetTank(''); setModalPhoto(null); setModalVideo(null); setIsCapturingPhoto(false); setIsCapturingVideo(false); }} className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition">
+                                   Transfer
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {groupName === 'COMPLETED' && (
+                            <div className="text-xs text-slate-600 space-y-1">
+                              <p>Quantity: <span className="font-extrabold text-slate-800">{(t.initialQty || 0).toLocaleString('en-IN')} pcs</span></p>
+                              {packets != null && <p>Packets: <span className="font-extrabold text-slate-800">{packets}</span></p>}
+                            </div>
+                          )}
+
+                          {groupName === 'RETURNED' && (
+                            <div className="text-xs text-slate-600 space-y-1">
+                              <p>Returned Quantity: <span className="font-extrabold text-red-700">{Number(t.returnedQuantity || t.initialQty).toLocaleString('en-IN')} pcs</span></p>
+                              {t.returnedPackets != null && <p>Returned Packets: <span className="font-extrabold text-red-700">{t.returnedPackets}</span></p>}
+                              <p>Status: <span className="font-extrabold text-red-700">Returned</span></p>
+                            </div>
+                          )}
+
+                          {groupName === 'TRANSFERRED' && (
+                            <div className="text-xs text-slate-600 space-y-1">
+                              <p>Transferred Quantity: <span className="font-extrabold text-blue-700">{Number(t.transferredQuantity || t.initialQty).toLocaleString('en-IN')} pcs</span></p>
+                              {t.transferredPackets != null && <p>Transferred Packets: <span className="font-extrabold text-blue-700">{t.transferredPackets}</span></p>}
+                              <p>Status: <span className="font-extrabold text-blue-700">Transferred</span></p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -745,6 +1005,309 @@ export default function SeedVanPlanStep1({
           </button>
         )}
       </div>
+
+      {/* Return Modal */}
+      {activeModal?.type === 'return' && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+            <h3 className="text-lg font-black text-red-700 uppercase tracking-wide border-b pb-2">Return Seed</h3>
+            
+            <div className="space-y-3">
+              <div>
+                <p className="text-[11px] uppercase font-bold text-slate-500">Tank</p>
+                <p className="text-sm font-extrabold text-slate-900">{activeModal.tankName}</p>
+              </div>
+              
+              <div>
+                <p className="text-[11px] uppercase font-bold text-slate-500">Available Quantity</p>
+                <p className="text-sm font-extrabold text-emerald-700">{activeModal.maxQty.toLocaleString('en-IN')} pcs</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label text-[11px]">Return Qty *</label>
+                  <input 
+                    type="number" 
+                    className="field text-xs font-bold" 
+                    value={modalQty}
+                    onChange={e => setModalQty(e.target.value)}
+                    max={activeModal.maxQty}
+                  />
+                </div>
+                <div>
+                  <label className="field-label text-[11px]">Return Packets</label>
+                  <input 
+                    type="number" 
+                    className="field text-xs font-bold" 
+                    value={modalPackets}
+                    onChange={e => setModalPackets(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="field-label text-[11px]">Reason for Return</label>
+                <input 
+                  type="text" 
+                  className="field text-xs" 
+                  value={modalReason}
+                  onChange={e => setModalReason(e.target.value)}
+                  placeholder="Optional reason..."
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="field-label text-xs mb-2 block">Photo</label>
+              {isCapturingPhoto ? (
+                <CameraCapture
+                  mode="photo"
+                  onCapture={(dataUrl) => { setModalPhoto(dataUrl); setIsCapturingPhoto(false); }}
+                  onCancel={() => setIsCapturingPhoto(false)}
+                />
+              ) : modalPhoto ? (
+                <div className="space-y-2">
+                  <img src={modalPhoto} alt="Return" className="w-full max-h-48 object-contain bg-slate-900 rounded-[12px] border shadow-inner" style={{ borderColor: 'var(--color-border)' }} />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsCapturingPhoto(true)} className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg">Retake</button>
+                    <label className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg text-center cursor-pointer">
+                      Change
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalPhoto)} />
+                    </label>
+                    <button type="button" onClick={() => setModalPhoto(null)} className="btn-ghost flex-1 py-2 text-xs font-bold text-red-600 bg-red-50 rounded-lg border border-red-100">Delete</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setIsCapturingPhoto(true)} className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition">
+                    <span className="text-xl">📷</span>
+                    <span className="font-bold text-xs">Capture Photo</span>
+                  </button>
+                  <label className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition cursor-pointer">
+                    <span className="text-xl">📁</span>
+                    <span className="font-bold text-xs">Upload Photo</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalPhoto)} />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="field-label text-xs mb-2 block">Video</label>
+              {isCapturingVideo ? (
+                <CameraCapture
+                  mode="video"
+                  onCapture={(dataUrl) => { setModalVideo(dataUrl); setIsCapturingVideo(false); }}
+                  onCancel={() => setIsCapturingVideo(false)}
+                />
+              ) : modalVideo ? (
+                <div className="space-y-2">
+                  <video src={modalVideo} controls className="w-full max-h-48 object-contain bg-slate-900 rounded-[12px] border shadow-inner" style={{ borderColor: 'var(--color-border)' }} />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsCapturingVideo(true)} className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg">Retake</button>
+                    <label className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg text-center cursor-pointer">
+                      Change
+                      <input type="file" accept="video/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalVideo)} />
+                    </label>
+                    <button type="button" onClick={() => setModalVideo(null)} className="btn-ghost flex-1 py-2 text-xs font-bold text-red-600 bg-red-50 rounded-lg border border-red-100">Delete</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setIsCapturingVideo(true)} className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition">
+                    <span className="text-xl">🎥</span>
+                    <span className="font-bold text-xs">Record Video</span>
+                  </button>
+                  <label className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition cursor-pointer">
+                    <span className="text-xl">📁</span>
+                    <span className="font-bold text-xs">Upload Video</span>
+                    <input type="file" accept="video/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalVideo)} />
+                  </label>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-3 pt-3 border-t">
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!modalQty || Number(modalQty) <= 0 || Number(modalQty) > activeModal.maxQty) {
+                    alert('Invalid return quantity. Must be greater than 0 and less than or equal to available quantity.');
+                    return;
+                  }
+                  handleReturnSubmit(activeModal.tankName, modalQty, modalPackets, activeModal.maxQty, modalReason, modalPhoto, modalVideo);
+                }}
+                className="btn-primary bg-red-600 hover:bg-red-700 text-white text-xs px-4 py-2 font-bold"
+              >
+                Confirm Return
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActiveModal(null)}
+                className="btn-ghost text-xs px-4 py-2 font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {activeModal?.type === 'transfer' && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
+            <h3 className="text-lg font-black text-blue-700 uppercase tracking-wide border-b pb-2">Transfer Seed</h3>
+            
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-[11px] uppercase font-bold text-slate-500">Source Tank</p>
+                  <p className="text-sm font-extrabold text-slate-900">{activeModal.tankName}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase font-bold text-slate-500">Available Qty</p>
+                  <p className="text-sm font-extrabold text-emerald-700">{activeModal.maxQty.toLocaleString('en-IN')} pcs</p>
+                </div>
+              </div>
+              
+              <div>
+                <label className="field-label text-[11px]">Target Tank *</label>
+                <input 
+                  type="text" 
+                  className="field text-xs font-bold uppercase" 
+                  value={modalTargetTank}
+                  onChange={e => setModalTargetTank(e.target.value)}
+                  placeholder="e.g. C2"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label text-[11px]">Transfer Qty *</label>
+                  <input 
+                    type="number" 
+                    className="field text-xs font-bold" 
+                    value={modalQty}
+                    onChange={e => setModalQty(e.target.value)}
+                    max={activeModal.maxQty}
+                  />
+                </div>
+                <div>
+                  <label className="field-label text-[11px]">Transfer Packets</label>
+                  <input 
+                    type="number" 
+                    className="field text-xs font-bold" 
+                    value={modalPackets}
+                    onChange={e => setModalPackets(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="field-label text-xs mb-2 block">Photo</label>
+              {isCapturingPhoto ? (
+                <CameraCapture
+                  mode="photo"
+                  onCapture={(dataUrl) => { setModalPhoto(dataUrl); setIsCapturingPhoto(false); }}
+                  onCancel={() => setIsCapturingPhoto(false)}
+                />
+              ) : modalPhoto ? (
+                <div className="space-y-2">
+                  <img src={modalPhoto} alt="Transfer" className="w-full max-h-48 object-contain bg-slate-900 rounded-[12px] border shadow-inner" style={{ borderColor: 'var(--color-border)' }} />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsCapturingPhoto(true)} className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg">Retake</button>
+                    <label className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg text-center cursor-pointer">
+                      Change
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalPhoto)} />
+                    </label>
+                    <button type="button" onClick={() => setModalPhoto(null)} className="btn-ghost flex-1 py-2 text-xs font-bold text-red-600 bg-red-50 rounded-lg border border-red-100">Delete</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setIsCapturingPhoto(true)} className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition">
+                    <span className="text-xl">📷</span>
+                    <span className="font-bold text-xs">Capture Photo</span>
+                  </button>
+                  <label className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition cursor-pointer">
+                    <span className="text-xl">📁</span>
+                    <span className="font-bold text-xs">Upload Photo</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalPhoto)} />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="field-label text-xs mb-2 block">Video</label>
+              {isCapturingVideo ? (
+                <CameraCapture
+                  mode="video"
+                  onCapture={(dataUrl) => { setModalVideo(dataUrl); setIsCapturingVideo(false); }}
+                  onCancel={() => setIsCapturingVideo(false)}
+                />
+              ) : modalVideo ? (
+                <div className="space-y-2">
+                  <video src={modalVideo} controls className="w-full max-h-48 object-contain bg-slate-900 rounded-[12px] border shadow-inner" style={{ borderColor: 'var(--color-border)' }} />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsCapturingVideo(true)} className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg">Retake</button>
+                    <label className="btn-ghost flex-1 py-2 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg text-center cursor-pointer">
+                      Change
+                      <input type="file" accept="video/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalVideo)} />
+                    </label>
+                    <button type="button" onClick={() => setModalVideo(null)} className="btn-ghost flex-1 py-2 text-xs font-bold text-red-600 bg-red-50 rounded-lg border border-red-100">Delete</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setIsCapturingVideo(true)} className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition">
+                    <span className="text-xl">🎥</span>
+                    <span className="font-bold text-xs">Record Video</span>
+                  </button>
+                  <label className="flex-1 btn-ghost p-3 flex items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-slate-300 text-black hover:border-slate-400 hover:bg-slate-50 transition cursor-pointer">
+                    <span className="text-xl">📁</span>
+                    <span className="font-bold text-xs">Upload Video</span>
+                    <input type="file" accept="video/*" className="hidden" onChange={(e) => handleFileUpload(e, setModalVideo)} />
+                  </label>
+                </div>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-3 pt-3 border-t">
+              <button 
+                type="button" 
+                onClick={() => {
+                  if (!modalTargetTank.trim()) {
+                    alert('Target tank is required');
+                    return;
+                  }
+                  if (!modalQty || Number(modalQty) <= 0 || Number(modalQty) > activeModal.maxQty) {
+                    alert('Invalid transfer quantity. Must be greater than 0 and less than or equal to available quantity.');
+                    return;
+                  }
+                  if (modalTargetTank.trim().toUpperCase() === activeModal.tankName.toUpperCase()) {
+                    alert('Target tank cannot be the same as source tank');
+                    return;
+                  }
+                  handleTransferSubmit(activeModal.tankName, modalTargetTank, modalQty, modalPackets, activeModal.maxQty, modalPhoto, modalVideo);
+                }}
+                className="btn-primary bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 font-bold"
+              >
+                Confirm Transfer
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setActiveModal(null)}
+                className="btn-ghost text-xs px-4 py-2 font-bold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

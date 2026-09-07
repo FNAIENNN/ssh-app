@@ -1,4 +1,4 @@
-/**
+/*
  * BillDetailsReadOnly — Shared canonical read-only Bill Details view.
  *
  * Used by both Past Orders (SeedOrderWorkflow 'readonly' mode) and History.
@@ -13,11 +13,12 @@
  *   showExport     — if true, show PDF/Image export buttons (default true)
  *   exportRef      — optional ref to pass for html2canvas export target
  */
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import ActivityTimeline from '../../../components/ui/ActivityTimeline';
 import { aggregateTankStates } from './seedStocking/stockingUtils';
+import { supabase, TABLES } from '../../../lib/supabaseClient';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,8 +41,8 @@ function InfoField({ label, value, bold, highlight, success, mono }) {
   const colorStyle = highlight
     ? { color: 'var(--color-primary)' }
     : success
-    ? { color: 'var(--color-success)' }
-    : {};
+      ? { color: 'var(--color-success)' }
+      : {};
   return (
     <div>
       <p className="text-text-muted mb-0.5" style={{ fontSize: '11px' }}>{label}</p>
@@ -112,7 +113,7 @@ function VanPlanView({ vanPlan }) {
   const drums = getDrums(vanPlan);
   if (!vanPlan) return <EmptyNote text="No Seed Van Plan recorded yet." />;
   if (drums.length === 0) return <EmptyNote text="No drum allocations found." />;
-  
+
   return (
     <div className="space-y-3">
       <div className="overflow-x-auto rounded-[10px] border text-xs" style={{ borderColor: 'var(--color-border)' }}>
@@ -196,11 +197,11 @@ function VanPlanView({ vanPlan }) {
 
 function StockingStatusView({ stockingData }) {
   if (!stockingData) return <EmptyNote text="Stocking status not yet recorded." />;
-  
+
   const aggregatedTanks = aggregateTankStates(stockingData.tankStates, stockingData.transfers);
-  const completedTanks   = aggregatedTanks.filter((t) => t.status === 'completed');
-  const pendingTanks     = aggregatedTanks.filter((t) => t.status === 'pending');
-  const returnedTanks    = aggregatedTanks.filter((t) => t.status === 'returned');
+  const completedTanks = aggregatedTanks.filter((t) => t.status === 'completed');
+  const pendingTanks = aggregatedTanks.filter((t) => t.status === 'pending');
+  const returnedTanks = aggregatedTanks.filter((t) => t.status === 'returned');
   const transferredTanks = aggregatedTanks.filter((t) => t.status === 'transferred');
 
   return (
@@ -247,28 +248,24 @@ function StockingStatusView({ stockingData }) {
 
       {/* Transfers Summary (if any) */}
       {stockingData.transfers && stockingData.transfers.length > 0 && (
-        <div className="p-4 rounded-[10px] bg-sky-50 border border-sky-200 mt-4 space-y-3">
-          <h4 className="font-extrabold text-sm text-sky-900 border-b border-sky-200 pb-2 flex items-center gap-2">
-            <span>🔀</span> Detailed Transfer Summary &amp; History
-          </h4>
-          <div className="space-y-2">
-            {stockingData.transfers.map((t) => (
-              <div key={t.id} className="p-3 bg-white rounded border border-sky-100 text-xs shadow-sm space-y-1 text-sky-900">
-                <p className="font-bold">
-                  🔄 Transferred From Drum: <strong>{t.transferredFromDrum}</strong>
-                </p>
-                <p>
-                  📍 Original Tank: <strong>{t.originalTank}</strong> ➔ ➡️ Target: <strong>{t.transferredToTank}</strong>
-                </p>
-                <p>
-                  Transferred Quantity: <strong className="text-sky-700">{Number(t.transferredAmount || 0).toLocaleString('en-IN')} pcs</strong>
-                </p>
-                <p className="font-extrabold mt-1 pt-1 border-t border-sky-50 text-[11px]">
-                  Final Target Total: {Number(t.finalTargetTotal || 0).toLocaleString('en-IN')} pcs
-                </p>
+        <div className="mt-6 space-y-4">
+          {stockingData.transfers.map((t, i) => (
+            <div key={t.id || i} className="border rounded-[12px] overflow-hidden bg-white" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="px-4 py-2 border-b bg-slate-50 flex items-center gap-2" style={{ borderColor: 'var(--color-border)' }}>
+                <span>🔀</span>
+                <h4 className="font-extrabold text-xs text-text-primary tracking-wide uppercase">
+                  {stockingData.transfers.length > 1 ? `Transfer ${i + 1}` : 'Transfer Details'}
+                </h4>
               </div>
-            ))}
-          </div>
+              <div className="p-4 grid grid-cols-1 md:grid-cols-5 gap-4">
+                <InfoField label="Transfer Status" value="Transferred" bold />
+                <InfoField label="Source Tank" value={t.originalTank || '—'} bold />
+                <InfoField label="Target Tank" value={t.transferredToTank || '—'} bold />
+                <InfoField label="Transferred Quantity" value={t.transferredAmount != null ? `${Number(t.transferredAmount).toLocaleString('en-IN')} pcs` : '—'} bold highlight />
+                <InfoField label="Transferred Packets" value="—" bold />
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -308,23 +305,85 @@ export default function BillDetailsReadOnly({
 }) {
   const detailRef = useRef(null);
   const [exporting, setExporting] = useState(false);
+  const [origOrder, setOrigOrder] = useState(null);
+  const [origPayments, setOrigPayments] = useState([]);
+  const [siteName, setSiteName] = useState('—');
+  const [returnVehicle, setReturnVehicle] = useState(null);
+  const [returnBills, setReturnBills] = useState([]);
+
+  useEffect(() => {
+    if (bill?.type === 'return') {
+      const fetchExtra = async () => {
+        if (bill.site_id) {
+          const { data: sData } = await supabase
+            .from(TABLES.sites)
+            .select('name')
+            .eq('id', bill.site_id)
+            .single();
+          if (sData) setSiteName(sData.name);
+        }
+
+        if (bill.packing_data?.order_id) {
+          const { data: oData } = await supabase
+            .from(TABLES.bills)
+            .select('hatchery, seed_type, site_id, selected_tanks, overall_quantity')
+            .eq('id', bill.packing_data.order_id)
+            .single();
+          if (oData) setOrigOrder(oData);
+
+          const { data: pData } = await supabase
+            .from(TABLES.payments)
+            .select('*')
+            .eq('bill_id', bill.packing_data.order_id)
+            .eq('method', 'advance');
+          if (pData) setOrigPayments(pData);
+
+          const { data: vData } = await supabase
+            .from(TABLES.vehicleBookings)
+            .select('*')
+            .eq('bill_id', bill.packing_data.order_id);
+
+          if (vData && bill.packing_data.vehicle_no) {
+            const v = vData.find(v => v.vehicle_no === bill.packing_data.vehicle_no);
+            if (v) setReturnVehicle(v);
+          }
+        }
+      };
+      fetchExtra();
+    } else if (bill?.type === 'seed' || bill?.type === 'seed_order') {
+      const fetchReturns = async () => {
+        const { data: rBills } = await supabase
+          .from(TABLES.bills)
+          .select('*')
+          .eq('site_id', bill.site_id)
+          .in('type', ['return', 'return_bill']);
+        if (rBills) {
+          const myReturns = rBills.filter(r => 
+             r.packing_data?.order_id === bill.id || 
+             r.original_bill_id === bill.id
+          );
+          setReturnBills(myReturns);
+        }
+      };
+      fetchReturns();
+    }
+  }, [bill]);
 
   if (!bill) return null;
 
   // ── Data extraction ───────────────────────────────────────────────────────
-  const isSeedPayment = (p) => !p.type || p.type === 'seed' || p.type === 'seed_order';
-  const cashPays = payments.filter((p) => p.method === 'cash' && isSeedPayment(p));
-  const advPays  = payments.filter((p) => p.method === 'advance' && isSeedPayment(p));
-  const vanPlan      = bill.van_plan;
+  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle');
+  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle');
+  const vanPlan = bill.van_plan;
   const stockingData = bill.stocking_status_data;
-  const workersData  = bill.outside_workers_data;
-  const packingData  = bill.packing_data;
+  const workersData = bill.outside_workers_data;
+  const packingData = bill.packing_data;
   const outsideWorkerPayments = payments.filter((p) => p.type?.toLowerCase() === 'outside_worker' || p.type?.toLowerCase() === 'outside worker');
 
   const isCompleted = bill.status === 'Completed' || bill.stocking_status === 'completed';
 
-  const selectedTanks    = bill.selected_tanks || [];
-  const newlyAddedTanks  = bill.newly_added_tanks || [];
+  const selectedTanks = bill.selected_tanks || [];
+  const newlyAddedTanks = bill.newly_added_tanks || [];
 
   // ── Special View for Return Bills ──
   if (bill.type === 'return') {
@@ -366,20 +425,93 @@ export default function BillDetailsReadOnly({
             <div className="p-8 space-y-6">
               <SectionCard title="Return Details" icon="↩">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <InfoField label="Source Tank" value={pd.tank_name} bold />
-                  <InfoField label="Vehicle" value={pd.vehicle_no || '—'} bold />
-                  <InfoField label="Returned Quantity" value={pd.quantity != null ? `${Number(pd.quantity).toLocaleString('en-IN')} pcs` : '—'} bold highlight />
-                  <InfoField label="Returned Packets" value={pd.packets != null ? pd.packets : '—'} bold />
+                  <InfoField label="Site" value={siteName} bold />
+
+                  {(() => {
+                    let standaloneTankName = pd.tank_name;
+                    if (!standaloneTankName && pd.tank_id && origOrder?.selected_tanks) {
+                      const t = origOrder.selected_tanks.find(st => st.id === pd.tank_id);
+                      if (t) standaloneTankName = t.name;
+                    }
+                    return <InfoField label="Tank Number" value={standaloneTankName || '—'} bold highlight />;
+                  })()}
                 </div>
-                <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
-                  <InfoField label="Reason for Return" value={pd.reason || '—'} bold />
-                </div>
-                {pd.order_number && (
+                {pd.reason && (
                   <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
-                    <InfoField label="Original Seed Order" value={pd.order_number} />
+                    <InfoField label="Reason for Return" value={pd.reason} />
                   </div>
                 )}
               </SectionCard>
+
+              <SectionCard title="Seed Details" icon="🌱">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <InfoField label="Seed" value={origOrder?.seed_type || '—'} bold />
+                  <InfoField label="Returned Seed Quantity" value={pd.quantity != null ? `${Number(pd.quantity).toLocaleString('en-IN')} pcs` : '—'} bold highlight />
+                  <InfoField label="Returned Packets" value={pd.packets != null ? pd.packets : '—'} bold />
+                </div>
+              </SectionCard>
+
+              {(() => {
+                const retPayment = payments.find(p => p.type === 'return' || p.method === 'return' || p.status === 'returned') || {};
+                const returnAmount = retPayment.amount || 0;
+
+                let bankAcct = {
+                  account_number: retPayment.account_number,
+                  holder_name: retPayment.holder_name,
+                  ifsc_code: retPayment.ifsc_code,
+                  bank_name: retPayment.bank_name,
+                };
+
+                if (!bankAcct.account_number) {
+                  const origBankPayment = origPayments.find(p => p.account_number || p.upi_id) || {};
+                  bankAcct = {
+                    account_number: origBankPayment.account_number,
+                    holder_name: origBankPayment.holder_name,
+                    ifsc_code: origBankPayment.ifsc_code,
+                    bank_name: origBankPayment.bank_name,
+                  };
+                }
+                const hatcheryName = origOrder?.hatchery || '—';
+
+                return (
+                  <>
+                    <SectionCard title="Hatchery Details" icon="🏭">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <InfoField label="Hatchery Name" value={hatcheryName} bold highlight />
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard title="Vehicle / Driver Details" icon="🚛">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <InfoField label="Vehicle Number" value={pd.vehicle_no || '—'} bold />
+                        <InfoField label="Driver Name" value={returnVehicle?.driver_name || '—'} />
+                        <InfoField label="Driver Phone Number" value={returnVehicle?.driver_phone || '—'} />
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard title="Return Payment" icon="💸">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <InfoField label="Return Amount" value={`₹${Number(returnAmount).toLocaleString('en-IN')}`} bold success />
+                      </div>
+                    </SectionCard>
+
+                    <SectionCard title="Hatchery Bank Details" icon="🏦">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <InfoField label="Bank Account Number" value={bankAcct.account_number || '—'} bold />
+                        <InfoField label="Account Holder Name" value={bankAcct.holder_name || '—'} />
+                        <InfoField label="IFSC Code" value={bankAcct.ifsc_code || '—'} />
+                        <InfoField label="Bank Name" value={bankAcct.bank_name || '—'} />
+                      </div>
+                    </SectionCard>
+                  </>
+                );
+              })()}
+
+              {pd.order_number && (
+                <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--color-border)' }}>
+                  <InfoField label="Original Seed Order" value={pd.order_number} />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -556,6 +688,63 @@ export default function BillDetailsReadOnly({
             </div>
           )}
         </SectionCard>
+
+        {/* ── 1.5. Return Details (if any) ── */}
+        {returnBills.length > 0 && (
+          <SectionCard title="Return Details" icon="↩">
+            <div className="space-y-4">
+              {returnBills.map((rBill, idx) => {
+                const pd = rBill.packing_data || {};
+                const isRetBill = rBill.type === 'return_bill';
+                const rQty = isRetBill ? Number(rBill.seed_count_returned || 0) : Number(pd.quantity || pd.returned_qty || 0);
+
+                // Try to find original tank quantity
+                let origQty = 0;
+                let actualTankName = isRetBill ? (rBill.drum_name || rBill.original_tank) : pd.tank_name;
+
+                if (actualTankName) {
+                  const t = selectedTanks.find(st => st.name === actualTankName);
+                  if (t) origQty = Number(t.qty || 0);
+                }
+                if (!origQty && pd.tank_id) {
+                  const t = selectedTanks.find(st => st.id === pd.tank_id);
+                  if (t) {
+                    origQty = Number(t.qty || 0);
+                    if (!actualTankName) actualTankName = t.name;
+                  }
+                }
+                if (!origQty) {
+                  origQty = Number(bill.overall_quantity || 0);
+                }
+
+                const remainingQty = origQty - rQty;
+                const rType = (remainingQty > 0 || rBill.status?.toLowerCase().includes('partial') || pd.type === 'partial') ? 'Partial Return' : 'Full Return';
+
+                return (
+                  <div key={rBill.id} className="p-4 rounded-[12px] border bg-red-50/30" style={{ borderColor: '#fca5a5' }}>
+                    <p className="text-[10px] uppercase tracking-wider text-red-600 font-bold mb-3 pb-2 border-b border-red-100 flex items-center justify-between">
+                      <span>Return #{idx + 1} {actualTankName ? `· Tank ${actualTankName}` : ''}</span>
+                      <span className="text-red-500">{rBill.bill_number}</span>
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                      <InfoField label="Return Type" value={rType} bold highlight />
+                      <InfoField label="Tank Number" value={actualTankName || '—'} bold highlight />
+                      {origQty > 0 && (
+                        <InfoField label="Original Quantity" value={`${origQty.toLocaleString('en-IN')} pcs`} />
+                      )}
+                      <InfoField label="Returned Quantity" value={`${rQty.toLocaleString('en-IN')} pcs`} bold highlight />
+                      {origQty > 0 && (
+                        <InfoField label="Remaining Quantity" value={`${remainingQty.toLocaleString('en-IN')} pcs`} />
+                      )}
+                      <InfoField label="Return Date" value={pd.return_date || new Date(rBill.created_at).toLocaleDateString('en-IN')} />
+                      {(pd.reason || rBill.reason) && <InfoField label="Reason" value={pd.reason || rBill.reason} />}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </SectionCard>
+        )}
 
         {/* ── 2. Advance Cash Payments ── */}
         <SectionCard title="Advance Cash Payments" icon="💵">
@@ -742,7 +931,7 @@ export default function BillDetailsReadOnly({
                   <p className="text-xl font-black text-green-800">{Number(packingData.totalPackets || 0).toLocaleString('en-IN')}</p>
                 </div>
               </div>
-              
+
               <div className="overflow-x-auto rounded-[8px] border" style={{ borderColor: 'var(--color-border)' }}>
                 <table className="w-full text-left text-sm border-collapse">
                   <thead>
@@ -759,7 +948,7 @@ export default function BillDetailsReadOnly({
                       const isFullyDone = t.quantity <= 0 && t.numberOfPackets <= 0 && (t.status === 'Transferred' || t.status === 'Returned');
                       const vIndex = vehicles.findIndex(v => (v.tank_ids || v.selectedTanks || []).includes(t.id));
                       const vehicleStr = t.isTransferTarget ? 'Target Tank' : (vIndex !== -1 ? `Vehicle ${vIndex + 1}` : 'Unassigned');
-                      
+
                       return (
                         <tr key={idx} className="border-t hover:bg-slate-50 transition" style={{ borderColor: 'var(--color-border)' }}>
                           <td className="p-3 font-bold text-slate-800 border-r align-top" style={{ borderColor: 'var(--color-border)' }}>
@@ -816,6 +1005,38 @@ export default function BillDetailsReadOnly({
                   </tbody>
                 </table>
               </div>
+
+              {/* Packing Transfers */}
+              {(() => {
+                const packingTransfers = (packingData.tanks || []).filter(t => t.isTransferTarget);
+                if (packingTransfers.length === 0) return null;
+
+                return (
+                  <div className="mt-6 space-y-4">
+                    {packingTransfers.map((t, i) => {
+                      const sourceTank = packingData.tanks.find(src => src.id === t.sourceTankId || src.id === t.originalTankId);
+                      const sourceTankName = t.transferredFrom || sourceTank?.name || '—';
+                      return (
+                        <div key={t.id || i} className="border rounded-[12px] overflow-hidden bg-white" style={{ borderColor: 'var(--color-border)' }}>
+                          <div className="px-4 py-2 border-b bg-slate-50 flex items-center gap-2" style={{ borderColor: 'var(--color-border)' }}>
+                            <span>🔀</span>
+                            <h4 className="font-extrabold text-xs text-text-primary tracking-wide uppercase">
+                              {packingTransfers.length > 1 ? `Transfer ${i + 1}` : 'Transfer Details'}
+                            </h4>
+                          </div>
+                          <div className="p-4 grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <InfoField label="Transfer Status" value="Transferred" bold />
+                            <InfoField label="Source Tank" value={sourceTankName} bold />
+                            <InfoField label="Target Tank" value={t.name || '—'} bold />
+                            <InfoField label="Transferred Quantity" value={t.quantity != null ? `${Number(t.quantity).toLocaleString('en-IN')} pcs` : '—'} bold highlight />
+                            <InfoField label="Transferred Packets" value={t.numberOfPackets != null ? t.numberOfPackets : '—'} bold />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </SectionCard>
@@ -841,186 +1062,171 @@ export default function BillDetailsReadOnly({
           })
         )}
 
-        {/* ── 7. Outside Workers ── */}
+                {/* ── 7. Outside Workers ── */}
         <SectionCard title="Outside Workers" icon="👷">
-          {!workersData && outsideWorkerPayments.length === 0 ? (
+          {!workersData ? (
             <EmptyNote text="Outside workers data not yet recorded." />
           ) : (
             <div className="space-y-3">
-              {workersData && workersData.batches && workersData.batches.length > 0 ? (
+              {workersData.batches && workersData.batches.length > 0 ? (
                 <div className="space-y-4">
                   {workersData.batches.map((batch, idx) => (
-                    <div key={batch.batchId || idx} className="p-3 rounded-[12px] bg-slate-50 border space-y-3">
+                    <div key={batch.batchId || idx} className="p-4 rounded-[12px] bg-slate-50 border space-y-3">
                       <div className="flex justify-between items-start border-b pb-2">
                         <h4 className="font-extrabold text-primary text-sm">Batch {idx + 1}</h4>
                         <div className="text-right">
                           <span className="text-xs font-bold text-slate-500">Supplier: {batch.supplierName || 'N/A'}</span>
                           {batch.selectedTanks && batch.selectedTanks.length > 0 && (
                             <p className="text-xs font-bold text-slate-500 mt-1">
-                              Tanks: {batch.selectedTanks.map(t => `${t.vehicleNumber} - ${t.tankName}`).join(', ')}
+                              Tanks: {batch.selectedTanks.map(t => `${t.vehicleNumber || ''} - ${t.tankName || ''}`).join(', ')}
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="overflow-x-auto rounded-[10px] border text-xs bg-white" style={{ borderColor: 'var(--color-border)' }}>
-                        <table className="w-full text-left border-collapse">
+                      <div className="overflow-x-auto rounded-[10px] border text-xs">
+                        <table className="w-full text-left border-collapse bg-white">
                           <thead>
                             <tr className="bg-slate-800 text-white">
-                              <th className="p-2.5 font-bold">Category</th>
-                              <th className="p-2.5 font-bold">Qty</th>
-                              <th className="p-2.5 font-bold">Amount (₹)</th>
-                              <th className="p-2.5 font-bold text-right">Total (₹)</th>
+                              <th className="p-2 font-bold">Category</th>
+                              <th className="p-2 font-bold">Qty</th>
+                              <th className="p-2 font-bold">Amount</th>
+                              <th className="p-2 font-bold text-right">Total</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {(batch.workers || []).filter(w => Number(w.quantity) > 0 || Number(w.amount) > 0).map((w) => (
-                              <tr key={w.sNo} className="border-b hover:bg-slate-50 transition" style={{ borderColor: 'var(--color-border)' }}>
-                                <td className="p-2.5 font-semibold">{w.category}</td>
-                                <td className="p-2.5">{w.quantity || 0}</td>
-                                <td className="p-2.5">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
-                                <td className="p-2.5 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
+                            {batch.workers?.filter(w => Number(w.quantity) > 0 || Number(w.amount) > 0).map((w) => (
+                              <tr key={w.sNo} className="border-b">
+                                <td className="p-2 font-semibold">{w.category}</td>
+                                <td className="p-2">{w.quantity || 0}</td>
+                                <td className="p-2">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
+                                <td className="p-2 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
                               </tr>
                             ))}
                           </tbody>
                           <tfoot>
-                            <tr className="bg-slate-100 font-extrabold">
-                              <td colSpan={3} className="p-2.5 text-right">Batch Total:</td>
-                              <td className="p-2.5 text-right text-success">₹{Number(batch.grandTotal || 0).toLocaleString('en-IN')}</td>
+                            <tr className="bg-slate-50">
+                              <td colSpan={3} className="p-2 text-right font-bold">Batch Total:</td>
+                              <td className="p-2 text-right font-extrabold text-success">
+                                ₹{Number(batch.grandTotal || 0).toLocaleString('en-IN')}
+                              </td>
                             </tr>
                           </tfoot>
                         </table>
                       </div>
                       {batch.remarks && (
-                        <div className="p-2 rounded-[8px] bg-white border text-xs" style={{ borderColor: 'var(--color-border)' }}>
-                          <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold mb-1">Remarks</p>
-                          <p>{batch.remarks}</p>
+                        <div className="text-xs">
+                          <p className="font-bold text-text-muted">Remarks:</p>
+                          <p className="p-2 rounded-[8px] bg-white border italic">{batch.remarks}</p>
                         </div>
                       )}
                       {batch.supervisorSignature && (
-                        <div className="pt-2 text-xs">
-                          <p className="text-[10px] text-text-muted font-bold mb-1">Mestri / Supervisor Signature:</p>
+                        <div className="pt-2">
+                          <p className="text-[10px] font-bold text-text-muted mb-1">Mestri / Supervisor Signature:</p>
                           <img
                             src={batch.supervisorSignature}
-                            alt="Supervisor Signature"
+                            alt="Supervisor Signature Workers"
                             className="h-16 border rounded-[8px] bg-white p-1 max-w-xs"
                           />
                         </div>
                       )}
                     </div>
                   ))}
-                  
-                  {outsideWorkerPayments.length > 0 && (
-                    <div className="mt-3 bg-slate-50 p-3 rounded border border-slate-200">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Payment History</p>
-                      <div className="space-y-2">
-                        {outsideWorkerPayments.map((p, idx) => (
-                          <div key={idx} className="flex justify-between items-center border-b border-slate-200 pb-2 last:border-0 last:pb-0">
-                            <span className="text-[11px] font-semibold text-slate-600">{new Date(p.created_at).toLocaleString()}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{p.method}</span>
-                              {p.upi_id && <span className="text-[10px] font-mono font-bold text-slate-500">{p.upi_id}</span>}
-                              {p.bank_account_id && <span className="text-[10px] font-mono font-bold text-slate-500">Bank Transfer</span>}
-                              <span className="text-xs font-black text-emerald-600">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
-                            </div>
-                          </div>
-                        ))}
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-[10px] border text-xs" style={{ borderColor: 'var(--color-border)' }}>
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800 text-white">
+                        <th className="p-2.5 font-bold">Category</th>
+                        <th className="p-2.5 font-bold">Qty</th>
+                        <th className="p-2.5 font-bold">Amount (₹)</th>
+                        <th className="p-2.5 font-bold text-right">Total (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(workersData.workers || []).map((w) => (
+                        <tr key={w.sNo} className="border-b hover:bg-slate-50 transition" style={{ borderColor: 'var(--color-border)' }}>
+                          <td className="p-2.5 font-semibold">{w.category}</td>
+                          <td className="p-2.5">{w.quantity || 0}</td>
+                          <td className="p-2.5">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
+                          <td className="p-2.5 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-100 font-extrabold">
+                        <td colSpan={3} className="p-2.5 text-right">Grand Total:</td>
+                        <td className="p-2.5 text-right text-success">₹{Number(workersData.grandTotal || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* Payments & Remaining */}
+              {(workersData.upiId || workersData.totalPaid != null) && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  {workersData.upiId && <InfoField label="Payment UPI ID" value={workersData.upiId} mono />}
+                  {workersData.totalPaid != null && (
+                    <InfoField label="Amount Paid" value={`₹${Number(workersData.totalPaid || 0).toLocaleString('en-IN')}`} success bold />
+                  )}
+                  {workersData.remainingBalance != null && (
+                    <InfoField label="Remaining Balance" value={`₹${Number(workersData.remainingBalance || 0).toLocaleString('en-IN')}`} />
+                  )}
+                </div>
+              )}
+
+              {outsideWorkerPayments.length > 0 && (
+                <div className="mt-3 bg-slate-50 p-3 rounded border border-slate-200">
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Payment History</p>
+                  <div className="space-y-2">
+                    {outsideWorkerPayments.map((p, idx) => (
+                      <div key={idx} className="flex justify-between items-center border-b border-slate-200 pb-2 last:border-0 last:pb-0">
+                        <span className="text-[11px] font-semibold text-slate-600">{new Date(p.created_at).toLocaleString()}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{p.method}</span>
+                          {p.upi_id && <span className="text-[10px] font-mono font-bold text-slate-500">{p.upi_id}</span>}
+                          {p.bank_account_id && <span className="text-[10px] font-mono font-bold text-slate-500">Bank Transfer</span>}
+                          <span className="text-xs font-black text-emerald-600">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Supervisor / Mestri for non-batch */}
+              {!workersData.batches && workersData.supervisorName && (
+                <div className="p-3 rounded-[10px] bg-slate-50 border text-xs space-y-1" style={{ borderColor: 'var(--color-border)' }}>
+                  <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold">
+                    {workersData.source === 'Packing' ? 'Mestri Details' : 'Supervisor Details'}
+                  </p>
+                  <p>
+                    <strong>{workersData.supervisorName}</strong>
+                    {workersData.supervisorPhone ? ` · ${workersData.supervisorPhone}` : ''}
+                  </p>
+                  {workersData.supervisorSignature && (
+                    <div className="pt-1">
+                      <p className="text-[10px] text-text-muted font-bold mb-1">
+                        {workersData.source === 'Packing' ? 'Mestri Sign Off:' : 'Digital Signature:'}
+                      </p>
+                      <img
+                        src={workersData.supervisorSignature}
+                        alt={workersData.source === 'Packing' ? 'Mestri Sign Off' : 'Supervisor Signature'}
+                        className="h-16 border rounded-[8px] bg-white p-1 max-w-xs"
+                      />
                     </div>
                   )}
                 </div>
-              ) : workersData ? (
-                <>
-                  <div className="overflow-x-auto rounded-[10px] border text-xs" style={{ borderColor: 'var(--color-border)' }}>
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-800 text-white">
-                          <th className="p-2.5 font-bold">Category</th>
-                          <th className="p-2.5 font-bold">Qty</th>
-                          <th className="p-2.5 font-bold">Amount (₹)</th>
-                          <th className="p-2.5 font-bold text-right">Total (₹)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(workersData.workers || []).map((w) => (
-                          <tr key={w.sNo} className="border-b hover:bg-slate-50 transition" style={{ borderColor: 'var(--color-border)' }}>
-                            <td className="p-2.5 font-semibold">{w.category}</td>
-                            <td className="p-2.5">{w.quantity || 0}</td>
-                            <td className="p-2.5">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
-                            <td className="p-2.5 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-100 font-extrabold">
-                          <td colSpan={3} className="p-2.5 text-right">Grand Total:</td>
-                          <td className="p-2.5 text-right text-success">₹{Number(workersData.grandTotal || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
+              )}
 
-                  {/* Payments & Remaining */}
-                  {(workersData.upiId || workersData.totalPaid != null) && (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                      {workersData.upiId && <InfoField label="Payment UPI ID" value={workersData.upiId} mono />}
-                      {workersData.totalPaid != null && (
-                        <InfoField label="Amount Paid" value={`₹${Number(workersData.totalPaid || 0).toLocaleString('en-IN')}`} success bold />
-                      )}
-                      {workersData.remainingBalance != null && (
-                        <InfoField label="Remaining Balance" value={`₹${Number(workersData.remainingBalance || 0).toLocaleString('en-IN')}`} />
-                      )}
-                    </div>
-                  )}
-
-                  {outsideWorkerPayments.length > 0 && (
-                    <div className="mt-3 bg-slate-50 p-3 rounded border border-slate-200">
-                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Payment History</p>
-                      <div className="space-y-2">
-                        {outsideWorkerPayments.map((p, idx) => (
-                          <div key={idx} className="flex justify-between items-center border-b border-slate-200 pb-2 last:border-0 last:pb-0">
-                            <span className="text-[11px] font-semibold text-slate-600">{new Date(p.created_at).toLocaleString()}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{p.method}</span>
-                              {p.upi_id && <span className="text-[10px] font-mono font-bold text-slate-500">{p.upi_id}</span>}
-                              {p.bank_account_id && <span className="text-[10px] font-mono font-bold text-slate-500">Bank Transfer</span>}
-                              <span className="text-xs font-black text-emerald-600">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Supervisor */}
-                  {(workersData.supervisorName || workersData.supervisorPhone) && (
-                    <div className="p-3 rounded-[10px] bg-slate-50 border text-xs space-y-1 mt-3" style={{ borderColor: 'var(--color-border)' }}>
-                      <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold">Supervisor Details</p>
-                      <p>
-                        <strong>{workersData.supervisorName}</strong>
-                        {workersData.supervisorPhone ? ` · ${workersData.supervisorPhone}` : ''}
-                      </p>
-                      {workersData.supervisorSignature && (
-                        <div className="pt-1">
-                          <p className="text-[10px] text-text-muted font-bold mb-1">Digital Signature:</p>
-                          <img
-                            src={workersData.supervisorSignature}
-                            alt="Supervisor Signature"
-                            className="h-16 border rounded-[8px] bg-white p-1 max-w-xs"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Remarks */}
-                  {workersData.remarks && (
-                    <div className="p-3 rounded-[8px] bg-slate-50 border text-xs" style={{ borderColor: 'var(--color-border)' }}>
-                      <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold mb-1">Remarks</p>
-                      <p>{workersData.remarks}</p>
-                    </div>
-                  )}
-                </>
-              ) : null}
+              {/* Remarks for non-batch */}
+              {!workersData.batches && workersData.remarks && (
+                <div className="p-3 rounded-[8px] bg-slate-50 border text-xs" style={{ borderColor: 'var(--color-border)' }}>
+                  <p className="text-[10px] uppercase tracking-wider text-text-muted font-bold mb-1">Remarks</p>
+                  <p>{workersData.remarks}</p>
+                </div>
+              )}
             </div>
           )}
         </SectionCard>

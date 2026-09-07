@@ -84,6 +84,13 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
 
     if (status === 'returned') {
       const returnedSeedCount = Number(returnCountInput) || currentTank.currentCount;
+      if (returnedSeedCount <= 0 || returnedSeedCount > currentTank.currentCount) {
+        return toast.error(`Invalid return amount! Must be between 1 and ${currentTank.currentCount}.`);
+      }
+
+      const remainingAmt = currentTank.currentCount - returnedSeedCount;
+      const newStatus = remainingAmt === 0 ? 'returned' : 'Partial Return';
+
       const retBillPayload = {
         site_id: siteId,
         original_bill_id: activeOrder?.id || null,
@@ -112,9 +119,11 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
         ...prev,
         [tankKey]: {
           ...currentTank,
-          status: 'returned',
+          status: newStatus,
+          originalCount: currentTank.originalCount || currentTank.currentCount,
+          currentCount: remainingAmt,
           returnReason: returnReason || 'Return during stocking',
-          returnCount: returnedSeedCount,
+          returnCount: (currentTank.returnCount || 0) + returnedSeedCount,
         },
       }));
     } else if (status === 'transferred') {
@@ -124,7 +133,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
       }
 
       const remainingAmt = currentTank.currentCount - transferAmt;
-      const newStatus = remainingAmt === 0 ? 'transferred' : (currentTank.status === 'transferred' || currentTank.status === 'unassigned' ? 'pending' : currentTank.status);
+      const newStatus = remainingAmt === 0 ? 'transferred' : 'Partial Transfer';
       
       let targetName = '';
       let targetLogName = '';
@@ -137,18 +146,33 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
         
         targetName = newTankName;
         targetLogName = newTankName;
-        const targetTankId = `NEW-TANK-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
 
         transferLog = {
           id: `t-${Date.now()}`,
           transferredFromDrum: `Drum ${currentTank.drumNum} (${currentTank.tankName})`,
           originalTank: currentTank.tankName,
           transferredToTank: targetName,
-          targetTankId: targetTankId,
           transferredAmount: transferAmt,
           originalFromCount: currentTank.currentCount,
           originalToCount: 0,
           finalTargetTotal: transferAmt,
+        };
+
+        const maxDrumNum = Math.max(0, ...Object.values(tankStates).map(d => Number(d.drumNum) || 0));
+        const newDrumNum = maxDrumNum + 1;
+        const newDrumKey = `DRUM-${newDrumNum}-${newTankName}`;
+
+        newTankStateUpdates[newDrumKey] = {
+          drumKey: newDrumKey,
+          tankName: newTankName,
+          originalCount: transferAmt,
+          currentCount: transferAmt,
+          status: 'unassigned', // User must click and assign status
+          transferredTo: null,
+          transferredFrom: [currentTank.tankName],
+          drumNum: newDrumNum,
+          returnReason: '',
+          returnCount: 0,
         };
 
         toast.success(`Transferred ${transferAmt.toLocaleString('en-IN')} pcs to Tank ${newTankName}`);
@@ -178,21 +202,20 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
           originalToCount: origTargetAmt,
           finalTargetTotal: newTargetAmt,
         };
-
-        toast.success(`Merged ${transferAmt.toLocaleString('en-IN')} pcs into ${targetLogName}. Total: ${newTargetAmt.toLocaleString('en-IN')} pcs`);
+        toast.success(`Transferred ${transferAmt.toLocaleString('en-IN')} pcs to ${targetLogName}`);
       }
 
-      setTransfers((prevT) => [...prevT, transferLog]);
+      setTransfers((prev) => [...prev, transferLog]);
 
       setTankStates((prev) => ({
         ...prev,
         [tankKey]: {
           ...currentTank,
           status: newStatus,
-          originalCount: currentTank.originalCount || currentTank.currentCount,
           currentCount: remainingAmt,
+          originalCount: currentTank.originalCount || currentTank.currentCount,
+          transferredTo: targetLogName,
           transferredOut: (currentTank.transferredOut || 0) + transferAmt,
-          transferredTo: targetName,
         },
         ...newTankStateUpdates,
       }));
@@ -393,7 +416,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                       bgColor = '#dcfce7';
                       borderColor = '#22c55e';
                       textColor = '#14532d';
-                    } else if (state.status === 'pending') {
+                    } else if (state.status === 'pending' || state.status === 'Partial Return' || state.status === 'Partial Transfer') {
                       bgColor = '#fef9c3';
                       borderColor = '#eab308';
                       textColor = '#713f12';
@@ -431,12 +454,13 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                           </div>
                         ) : (
                           <>
-                            {(state.transferredOut > 0) ? (
+                            {(state.transferredOut > 0 || state.returnCount > 0) ? (
                               <div className="text-[10px] text-left bg-white/60 p-2 rounded mt-2 space-y-1 mx-auto max-w-[200px]">
                                 <p><strong>Source:</strong> {state.tankName}</p>
-                                <p><strong>Target:</strong> {state.transferredTo}</p>
-                                <p><strong>Original Qty:</strong> {state.originalCount?.toLocaleString('en-IN') || state.currentCount?.toLocaleString('en-IN')} pcs</p>
-                                <p><strong>Transferred:</strong> {state.transferredOut?.toLocaleString('en-IN')} pcs</p>
+                                {state.transferredTo && <p><strong>Target:</strong> {state.transferredTo}</p>}
+                                <p><strong>Original Qty:</strong> {state.originalCount?.toLocaleString('en-IN') || (state.currentCount + (state.transferredOut || 0) + (state.returnCount || 0)).toLocaleString('en-IN')} pcs</p>
+                                {state.transferredOut > 0 && <p><strong>Transferred:</strong> {state.transferredOut?.toLocaleString('en-IN')} pcs</p>}
+                                {state.returnCount > 0 && <p><strong>Returned:</strong> {state.returnCount?.toLocaleString('en-IN')} pcs</p>}
                                 <p><strong>Remaining:</strong> {state.currentCount?.toLocaleString('en-IN')} pcs</p>
                               </div>
                             ) : (
