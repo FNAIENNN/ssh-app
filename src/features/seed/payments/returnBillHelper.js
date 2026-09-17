@@ -27,7 +27,11 @@ export async function uploadReturnMedia(dataUrl, prefix) {
       console.warn('Storage media upload failed, falling back to dataUrl:', error.message || error);
       return dataUrl;
     }
-    return data?.path || fileName;
+    if (data?.path) {
+      const { data: urlData } = supabase.storage.from('media').getPublicUrl(data.path);
+      return urlData?.publicUrl || data.path;
+    }
+    return fileName;
   } catch (err) {
     console.warn('uploadReturnMedia failed, falling back to dataUrl:', err.message || err);
     return dataUrl;

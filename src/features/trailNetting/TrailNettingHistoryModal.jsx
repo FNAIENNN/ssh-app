@@ -238,7 +238,7 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
                         <div className="flex flex-wrap gap-3">
                             {photos.map((p, idx) => (
                                 <div key={idx} className="w-24 h-24 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 shadow-sm flex items-center justify-center">
-                                    {typeof p === 'string' && p.startsWith('data:') ? (
+                                    {typeof p === 'string' && (p.startsWith('data:') || p.startsWith('http')) ? (
                                         <img src={p} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
                                     ) : (
                                         <div className="text-center p-2">

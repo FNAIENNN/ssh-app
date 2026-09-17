@@ -153,6 +153,38 @@ export default function SamplingPage() {
     }
 
     setSaving(true);
+    // NEW: Upload photos to Supabase Storage before saving
+    const uploadedPhotos = [];
+    for (const p of photos) {
+      if (typeof p === 'string') {
+        uploadedPhotos.push(p);
+      } else if (!p.file) {
+        uploadedPhotos.push(p.preview || p.name);
+      } else {
+        try {
+          const fileName = `trailnetting-${tankId}-${Date.now()}-${p.file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+          const { data, error } = await supabase.storage.from('media').upload(fileName, p.file);
+
+          if (error) {
+            console.error('Photo upload failed:', error);
+            setSaving(false);
+            return toast.error(`Failed to upload photo ${p.name}: ${error.message}`);
+          }
+
+          if (data?.path) {
+            const { data: urlData } = supabase.storage.from('media').getPublicUrl(data.path);
+            uploadedPhotos.push(urlData?.publicUrl || data.path);
+          } else {
+            uploadedPhotos.push(fileName);
+          }
+        } catch (uploadErr) {
+          console.error('Photo upload exception:', uploadErr);
+          setSaving(false);
+          return toast.error(`Failed to upload photo ${p.name}`);
+        }
+      }
+    }
+
     const today = new Date();
     const nextDate = new Date(today);
     nextDate.setDate(nextDate.getDate() + 7);
@@ -188,8 +220,8 @@ export default function SamplingPage() {
       latest_count: latestCount,
       diseases: selectedDiseases,
       remarks: remarks,
-      photos: photos.map((p) => (typeof p === 'string' ? p : p.preview || p.name)),
-      photos_count: photos.length,
+      photos: uploadedPhotos,
+      photos_count: uploadedPhotos.length,
       status: 'draft',
     };
 
@@ -206,8 +238,8 @@ export default function SamplingPage() {
       final_count: latestCount,
       diseases: selectedDiseases,
       remarks: remarks,
-      photos_count: photos.length,
-      photos: photos.map((p) => (typeof p === 'string' ? p : p.preview || p.name)),
+      photos_count: uploadedPhotos.length,
+      photos: uploadedPhotos,
       process_details: processDetails,
       next_expected_date: nextDate.toISOString().slice(0, 10),
       count_diff: countDiff,
