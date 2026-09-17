@@ -38,7 +38,10 @@ export default function HatcheryDetails({
   useEffect(() => {
     if (onHatcheryBankAccountAddedRef) {
       onHatcheryBankAccountAddedRef.current = (newAccount) => {
-        setBankAccounts((prev) => [newAccount, ...prev]);
+        setBankAccounts((prev) => {
+          if (prev.some((p) => p.id === newAccount.id)) return prev;
+          return [newAccount, ...prev];
+        });
       };
     }
   }, [onHatcheryBankAccountAddedRef]);
@@ -61,15 +64,31 @@ export default function HatcheryDetails({
       .from(TABLES.hatcheries)
       .select('*')
       .order('hatchery_name');
-    const loadedHatcheries = hData ?? [];
-    
-    // We will not deduplicate here, but rather keep all IDs so we can map them to bank accounts
-    setHatcheries(loadedHatcheries);
+
+    // Strict isolation: Keep ONLY Hatchery records (exclude any records marked as outside worker)
+    const validHatcheries = (hData ?? []).filter((h) => {
+      if (
+        h.category === 'outside_worker' ||
+        h.type === 'outside_worker' ||
+        h.is_outside_worker === true ||
+        h.supplier_type === 'outside_worker'
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    setHatcheries(validHatcheries);
 
     const { data: bData } = await supabase
       .from(TABLES.hatcheryBankAccounts)
       .select('*');
-    setBankAccounts(bData ?? []);
+
+    const validHatcheryIds = new Set(validHatcheries.map((h) => h.id));
+    const validAccounts = (bData ?? []).filter(
+      (b) => validHatcheryIds.has(b.hatchery_id) && b.category !== 'outside_worker'
+    );
+    setBankAccounts(validAccounts);
   }
 
   const filteredHatcheries = useMemo(() => {
@@ -84,7 +103,7 @@ export default function HatcheryDetails({
           h.account_number?.includes(q)
       );
     }
-    
+
     // Deduplicate by Hatchery Name so the dropdown only shows one entry per unique hatchery name
     const uniqueByName = [];
     const seenNames = new Set();
@@ -100,32 +119,45 @@ export default function HatcheryDetails({
 
   const activeHatcheryAccounts = useMemo(() => {
     if (!selectedHatchery) return [];
-    
-    // Find all hatchery IDs that share the exact same name (case-insensitive) as the selected hatchery
-    const targetName = (selectedHatchery.hatchery_name || '').trim().toLowerCase();
-    const matchingHatcheryIds = new Set(
-      hatcheries
-        .filter(h => (h.hatchery_name || '').trim().toLowerCase() === targetName)
-        .map(h => h.id)
-    );
-    
-    // Fallback: always include the exact selected ID just in case
-    matchingHatcheryIds.add(selectedHatchery.id);
 
-    // Get all bank accounts linked to ANY of these matching hatchery IDs
-    const accounts = bankAccounts.filter((b) => matchingHatcheryIds.has(b.hatchery_id));
-    
+    // Find all hatchery IDs that share the same hatchery name
+    const sameNameHatcheryIds = hatcheries
+      .filter(h => (h.hatchery_name || '').trim().toLowerCase() === (selectedHatchery.hatchery_name || '').trim().toLowerCase())
+      .map(h => h.id);
+
+    // Isolate accounts belonging to any hatchery with the same name
+    const accounts = bankAccounts.filter((b) => sameNameHatcheryIds.includes(b.hatchery_id));
+
     const seen = new Set();
     const filteredAccounts = accounts.filter((a) => {
-      const key = `${(a.account_number || '').trim()}_${(a.ifsc_code || a.ifsc || '').trim()}`;
+      const normAcct = (a.account_number || '').trim().replace(/\s+/g, '');
+      const normIfsc = (a.ifsc_code || a.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+      const key = `${normAcct}_${normIfsc}`;
       if (!key || key === '_') return true;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-    
+
     return filteredAccounts;
-  }, [selectedHatchery, bankAccounts, hatcheries]);
+  }, [selectedHatchery, hatcheries, bankAccounts]);
+
+  // Safeguard: when selectedHatchery or activeHatcheryAccounts changes
+  useEffect(() => {
+    if (!selectedHatchery) {
+      if (selectedBankAccount) onSelectBankAccount(null);
+      return;
+    }
+
+    // If there is an active selection, verify it belongs to this hatchery
+    if (selectedBankAccount) {
+      const isValid = activeHatcheryAccounts.some(a => a.id === selectedBankAccount.id);
+      if (!isValid) {
+        // Clear stale account if it doesn't belong to the selected hatchery
+        onSelectBankAccount(null);
+      }
+    }
+  }, [selectedHatchery, activeHatcheryAccounts, selectedBankAccount, onSelectBankAccount]);
 
   async function handleAddHatchery() {
     if (!newHatchery.hatcheryName.trim()) return toast.error('Enter Hatchery Name');
@@ -138,6 +170,8 @@ export default function HatcheryDetails({
       location: newHatchery.location.trim(),
       account_number: newHatchery.accountNumber.trim(),
       ifsc_code: newHatchery.ifscCode.trim(),
+      category: 'hatchery',
+      type: 'hatchery',
       created_by: user?.id,
     };
 
@@ -161,6 +195,7 @@ export default function HatcheryDetails({
         holder_name: newHatchery.holderName.trim(),
         account_number: newHatchery.accountNumber.trim(),
         ifsc_code: newHatchery.ifscCode.trim(),
+        category: 'hatchery',
       };
       const { data: bRes } = await supabase
         .from(TABLES.hatcheryBankAccounts)
@@ -291,31 +326,20 @@ export default function HatcheryDetails({
           onChange={(e) => {
             const found = hatcheries.find((h) => h.id === e.target.value);
             onSelectHatchery(found || null);
-            onSelectBankAccount(null);
           }}
         >
           <option value="">Select a Hatchery...</option>
           {filteredHatcheries.map((h) => (
             <option key={h.id} value={h.id}>
-              {h.hatchery_name} ({h.holder_name || 'Holder N/A'}) {h.location ? `· ${h.location}` : ''}
+              {h.hatchery_name}
             </option>
           ))}
         </select>
 
         {selectedHatchery && (
           <div className="p-4 rounded-[12px] border space-y-3" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-            <div className="space-y-1 text-xs">
-              <p className="font-extrabold text-sm text-primary">{selectedHatchery.hatchery_name}</p>
-              <div className="grid grid-cols-2 gap-2 text-text-secondary pt-1">
-                <p>👤 <strong>Holder Name:</strong> {selectedHatchery.holder_name || 'N/A'}</p>
-                <p>📍 <strong>Location:</strong> {selectedHatchery.location || 'N/A'}</p>
-                {selectedHatchery.account_number && (
-                  <p>💳 <strong>Account No:</strong> {selectedHatchery.account_number}</p>
-                )}
-                {selectedHatchery.ifsc_code && (
-                  <p>🏛️ <strong>IFSC Code:</strong> {selectedHatchery.ifsc_code}</p>
-                )}
-              </div>
+            <div className="space-y-1 text-xs pb-1">
+              <p className="font-extrabold text-sm text-primary">Selected Hatchery: {selectedHatchery.hatchery_name}</p>
             </div>
 
             {/* Multiple Bank Accounts Display */}

@@ -164,16 +164,34 @@ export default function SamplingPage() {
     const cadence = computeCadence({ startDate: tank?.start_date, records });
     const doc = cadence.day;
 
-    // Automatically incorporate custom disease if entered without clicking Add
-    let finalSelectedDiseases = [...selectedDiseases];
-    if (selectedDiseases.includes('Other') && otherDiseaseText.trim()) {
-      const custom = otherDiseaseText.trim();
-      if (!finalSelectedDiseases.includes(custom)) {
-        finalSelectedDiseases.push(custom);
-      }
-    }
+    let checklistData = null;
+    try {
+      const rawCheck = sessionStorage.getItem(`tn_checklist_${tankId}`);
+      if (rawCheck) checklistData = JSON.parse(rawCheck);
+    } catch (e) { }
 
-    const formattedDiseases = finalSelectedDiseases.filter((d) => d !== 'Other');
+    const processDetails = {
+      tank_name: tank?.name,
+      section_name: tank?.sections?.name,
+      hatchery: tank?.hatchery,
+      seed_type: tank?.seed_type,
+      start_date: tank?.start_date,
+      quantity: tank?.quantity,
+      date: today.toISOString(),
+      doc: doc || 45,
+      checklist: checklistData || { 'Net': true, 'Dettol': true, 'Box': true, 'Weighing Machine': true },
+      samples: computedRows.map((r) => ({
+        no_of_kgs: Number(r.kgs) || 0,
+        pieces_count: Number(r.pieces) || 0,
+        count: r.count,
+      })),
+      latest_count: latestCount,
+      diseases: selectedDiseases,
+      remarks: remarks,
+      photos: photos.map((p) => (typeof p === 'string' ? p : p.preview || p.name)),
+      photos_count: photos.length,
+      status: 'draft',
+    };
 
     // 1) Save Trail Netting Record with Disease, Remarks & Photos info
     const recordPayload = {
@@ -186,9 +204,11 @@ export default function SamplingPage() {
         count: r.count,
       })),
       final_count: latestCount,
-      diseases: formattedDiseases,
+      diseases: selectedDiseases,
       remarks: remarks,
       photos_count: photos.length,
+      photos: photos.map((p) => (typeof p === 'string' ? p : p.preview || p.name)),
+      process_details: processDetails,
       next_expected_date: nextDate.toISOString().slice(0, 10),
       count_diff: countDiff,
       created_by: user?.id,
@@ -243,6 +263,7 @@ export default function SamplingPage() {
       final_harvest_count: latestCount,
       total_seed_catched: 214966.8,
       survival_percentage: 41,
+      process_details: processDetails,
     };
 
     await supabase
@@ -314,11 +335,10 @@ export default function SamplingPage() {
                   <tr
                     key={index}
                     onClick={() => setSelectedRowIndex(index)}
-                    className={`cursor-pointer transition-colors ${
-                      isSelected
+                    className={`cursor-pointer transition-colors ${isSelected
                         ? 'bg-emerald-50/70 font-semibold'
                         : 'hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -404,11 +424,10 @@ export default function SamplingPage() {
                 key={disease}
                 type="button"
                 onClick={() => toggleDisease(disease)}
-                className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 border ${
-                  isSelected
+                className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 border ${isSelected
                     ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 <span>{isSelected ? '✓' : '+'}</span>
                 <span>{disease}</span>
@@ -481,9 +500,8 @@ export default function SamplingPage() {
             </p>
           </div>
           <span
-            className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${
-              photos.length > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-            }`}
+            className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${photos.length > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              }`}
           >
             {photos.length > 0 ? `${photos.length} Photo(s) Attached` : 'Mandatory *'}
           </span>

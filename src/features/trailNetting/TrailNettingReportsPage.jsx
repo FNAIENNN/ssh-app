@@ -7,6 +7,7 @@ import { Spinner } from '../../components/ui/State';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import TrailNettingHistoryModal from './TrailNettingHistoryModal';
 
 export default function TrailNettingReportsPage() {
   const { tankId } = useParams();
@@ -19,19 +20,19 @@ export default function TrailNettingReportsPage() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
 
   useEffect(() => {
     if (!siteId) return;
     setLoading(true);
     (async () => {
-      // Fetch tanks scoped to site & selected section (if any)
-      let tankQuery = supabase.from(TABLES.tanks).select('*, sections(name)').eq('site_id', siteId);
-      if (selectedSectionId) {
-        tankQuery = tankQuery.eq('section_id', selectedSectionId);
-      }
-      const { data: tks } = await tankQuery.order('name');
-      const stocked = (tks ?? []).filter((t) => Number(t.quantity || 0) > 0);
-      setTanks(stocked);
+      // Fetch all master tanks for the site to ensure full tank name resolution
+      const { data: tks } = await supabase
+        .from(TABLES.tanks)
+        .select('*, sections(name)')
+        .eq('site_id', siteId)
+        .order('name');
+      setTanks(tks ?? []);
 
       // Fetch trail netting reports
       const { data: repData } = await supabase
@@ -42,180 +43,61 @@ export default function TrailNettingReportsPage() {
 
       setLoading(false);
     })();
-  }, [siteId, selectedSectionId]);
+  }, [siteId]);
 
-  // Construct report rows matching dynamic backend data structure
-  const reportRows = tanks.map((t) => {
-    const rep = reports.find((r) => r.tank_id === t.id) || {};
-    return {
-      tankNo: t.name,
-      hatchery: t.hatchery || rep.hatchery || 'Sri Mahalakshmi Hatchery Nellore Unit-2 28-Apr-2026',
-      seedStocked: t.quantity || 520000,
-      survivedSeed: rep.survived_seed || t.quantity || 520000,
-      doc: rep.doc || 82,
-      latestDate: rep.latest_date || '16-Jul-26',
-      previDate: rep.previous_date || '03-Jul-26',
-      latestCount: rep.latest_count || 51,
-      previCount: rep.previous_count || 74,
-      countDiff: rep.count_diff != null ? rep.count_diff : 23,
-      growthDiff: rep.growth_diff || 6.09,
-      weeklyGrowth: rep.weekly_growth || 3.3,
-      feedConspBetween: rep.feed_consp_between || 1592,
-      growthKgsBetween: rep.growth_kgs_between || 1857.65,
-      fcrBetween: rep.fcr_between || 0.85699,
-      feedConspTotal: rep.feed_consp_total || 8956.9,
-      middle1Date: rep.middle_1_date || rep.latest_middle_date || '02-Jul',
-      middle1Tonnage: rep.middle_1_tonnage || 1064,
-      middle1Count: rep.middle_1_count || 113,
-      middle2Date: rep.middle_2_date || '10-Jul',
-      middle2Tonnage: rep.middle_2_tonnage || 1280.2,
-      middle2Count: rep.middle_2_count || 74,
-      middle3Date: rep.middle_3_date || '-',
-      middle3Tonnage: rep.middle_3_tonnage || '-',
-      middle3Count: rep.middle_3_count || '-',
-      middleHarvestedSeed: rep.middle_harvested_seed || 214966.8,
-      remainingSeed: rep.remaining_seed || 305033.2,
-      middleTonnageTotal: rep.middle_tonnage_total || 2344.2,
-      remainingTonnage: rep.remaining_tonnage || 6612.7,
-      fcr12: rep.fcr_1_2 || 5510.6,
-      fcr13: rep.fcr_1_3 || 5086.7,
-      expectedFcr: rep.expected_fcr || '-',
-      expectedTonnageFeedFcr: rep.expected_tonnage_feed_fcr || '-',
-      trailnetCount: rep.trailnet_count || '-',
-      expectedTonnageRemSeed: rep.expected_tonnage_rem_seed || '-',
-      finalHarvestTonnage: rep.final_harvest_tonnage || 214966.8,
-      count: rep.final_harvest_count || '-',
-      totalSeedCatched: rep.total_seed_catched || 214966.8,
-      survivalPercentage: rep.survival_percentage || 41,
-    };
-  });
+  // Construct report rows ONLY for tanks that have actually completed Trail Netting
+  const reportRows = reports
+    .map((rep) => {
+      const t = tanks.find((tk) => tk.id === rep.tank_id);
+      if (selectedSectionId && t && t.section_id !== selectedSectionId) return null;
 
-  // Fallback demo rows if no tanks found
-  const displayRows = reportRows.length > 0 ? reportRows : [
-    {
-      tankNo: 'T1',
-      hatchery: 'Sri Mahalakshmi Hatchery Nellore Unit-2 28-Apr-2026',
-      seedStocked: 520000,
-      survivedSeed: 520000,
-      doc: 82,
-      latestDate: '16-Jul-26',
-      previDate: '03-Jul-26',
-      latestCount: 51,
-      previCount: 74,
-      countDiff: 23,
-      growthDiff: 6.09,
-      weeklyGrowth: 3.3,
-      feedConspBetween: 1592,
-      growthKgsBetween: 1857.65,
-      fcrBetween: 0.85699,
-      feedConspTotal: 8956.9,
-      middle1Date: '02-Jul',
-      middle1Tonnage: 1064,
-      middle1Count: 113,
-      middle2Date: '10-Jul',
-      middle2Tonnage: 1280.2,
-      middle2Count: 74,
-      middle3Date: '-',
-      middle3Tonnage: '-',
-      middle3Count: '-',
-      middleHarvestedSeed: 214966.8,
-      remainingSeed: 305033.2,
-      middleTonnageTotal: 2344.2,
-      remainingTonnage: 6612.7,
-      fcr12: 5510.6,
-      fcr13: 5086.7,
-      expectedFcr: '',
-      expectedTonnageFeedFcr: '',
-      trailnetCount: '',
-      expectedTonnageRemSeed: '',
-      finalHarvestTonnage: 214966.8,
-      count: '',
-      totalSeedCatched: 214966.8,
-      survivalPercentage: 41,
-    },
-    {
-      tankNo: 'T3',
-      hatchery: 'Sri Mahalakshmi Hatchery Nellore Unit-2 28-Apr-2026',
-      seedStocked: 450000,
-      survivedSeed: 450000,
-      doc: 82,
-      latestDate: '16-Jul-26',
-      previDate: '03-Jul-26',
-      latestCount: 54,
-      previCount: 69,
-      countDiff: 15,
-      growthDiff: 4.03,
-      weeklyGrowth: 2.2,
-      feedConspBetween: 1276,
-      growthKgsBetween: 1007.97,
-      fcrBetween: 1.26589,
-      feedConspTotal: 7025.9,
-      middle1Date: '02-Jul',
-      middle1Tonnage: 1197.6,
-      middle1Count: 119,
-      middle2Date: '10-Jul',
-      middle2Tonnage: 831.4,
-      middle2Count: 69,
-      middle3Date: '-',
-      middle3Tonnage: '-',
-      middle3Count: '-',
-      middleHarvestedSeed: 199881.0,
-      remainingSeed: 250119.0,
-      middleTonnageTotal: 2029.0,
-      remainingTonnage: 4996.9,
-      fcr12: 4164.1,
-      fcr13: 3843.8,
-      expectedFcr: '',
-      expectedTonnageFeedFcr: '',
-      trailnetCount: '',
-      expectedTonnageRemSeed: '',
-      finalHarvestTonnage: 199881.0,
-      count: '',
-      totalSeedCatched: 199881.0,
-      survivalPercentage: 44,
-    },
-    {
-      tankNo: 'T5',
-      hatchery: 'Sri Mahalakshmi Hatchery Nellore Unit-2 28-Apr-2026',
-      seedStocked: 520000,
-      survivedSeed: 520000,
-      doc: 82,
-      latestDate: '16-Jul-26',
-      previDate: '03-Jul-26',
-      latestCount: 61,
-      previCount: 76,
-      countDiff: 15,
-      growthDiff: 3.24,
-      weeklyGrowth: 1.7,
-      feedConspBetween: 1339,
-      growthKgsBetween: 1031.16,
-      fcrBetween: 1.29852,
-      feedConspTotal: 8157.4,
-      middle1Date: '02-Jul',
-      middle1Tonnage: 1016.1,
-      middle1Count: 104,
-      middle2Date: '10-Jul',
-      middle2Tonnage: 1264,
-      middle2Count: 76,
-      middle3Date: '-',
-      middle3Tonnage: '-',
-      middle3Count: '-',
-      middleHarvestedSeed: 201738.4,
-      remainingSeed: 318261.6,
-      middleTonnageTotal: 2280.1,
-      remainingTonnage: 5877.3,
-      fcr12: 4897.8,
-      fcr13: 4521.0,
-      expectedFcr: '',
-      expectedTonnageFeedFcr: '',
-      trailnetCount: '',
-      expectedTonnageRemSeed: '',
-      finalHarvestTonnage: 201738.4,
-      count: '',
-      totalSeedCatched: 201738.4,
-      survivalPercentage: 39,
-    },
-  ];
+      return {
+        rawReport: rep,
+        tank_id: rep.tank_id,
+        tankNo: t?.name || rep.tank_name || `Tank ${rep.tank_id}`,
+        hatchery: rep.hatchery || t?.hatchery || '—',
+        seedStocked: rep.seed_stocked || t?.quantity || '—',
+        survivedSeed: rep.survived_seed || t?.quantity || '—',
+        doc: rep.doc ?? '—',
+        latestDate: rep.latest_date || '—',
+        previDate: rep.previous_date || '—',
+        latestCount: rep.latest_count ?? '—',
+        previCount: rep.previous_count ?? '—',
+        countDiff: rep.count_diff != null ? rep.count_diff : '—',
+        growthDiff: rep.growth_diff ?? '—',
+        weeklyGrowth: rep.weekly_growth ?? '—',
+        feedConspBetween: rep.feed_consp_between ?? '—',
+        growthKgsBetween: rep.growth_kgs_between ?? '—',
+        fcrBetween: rep.fcr_between ?? '—',
+        feedConspTotal: rep.feed_consp_total ?? '—',
+        middle1Date: rep.middle_1_date || rep.latest_middle_date || '—',
+        middle1Tonnage: rep.middle_1_tonnage ?? '—',
+        middle1Count: rep.middle_1_count ?? '—',
+        middle2Date: rep.middle_2_date || '—',
+        middle2Tonnage: rep.middle_2_tonnage ?? '—',
+        middle2Count: rep.middle_2_count ?? '—',
+        middle3Date: rep.middle_3_date || '—',
+        middle3Tonnage: rep.middle_3_tonnage ?? '—',
+        middle3Count: rep.middle_3_count ?? '—',
+        middleHarvestedSeed: rep.middle_harvested_seed ?? '—',
+        remainingSeed: rep.remaining_seed ?? '—',
+        middleTonnageTotal: rep.middle_tonnage_total ?? '—',
+        remainingTonnage: rep.remaining_tonnage ?? '—',
+        fcr12: rep.fcr_1_2 ?? '—',
+        fcr13: rep.fcr_1_3 ?? '—',
+        expectedFcr: rep.expected_fcr ?? '—',
+        expectedTonnageFeedFcr: rep.expected_tonnage_feed_fcr ?? '—',
+        trailnetCount: rep.trailnet_count ?? '—',
+        expectedTonnageRemSeed: rep.expected_tonnage_rem_seed ?? '—',
+        finalHarvestTonnage: rep.final_harvest_tonnage ?? '—',
+        count: rep.final_harvest_count ?? '—',
+        totalSeedCatched: rep.total_seed_catched ?? '—',
+        survivalPercentage: rep.survival_percentage ?? '—',
+      };
+    })
+    .filter(Boolean);
+
+  const displayRows = reportRows;
 
   // Filter rows based on Tank Number or Tank Name search query
   const filteredRows = displayRows.filter((r) => {
@@ -225,14 +107,91 @@ export default function TrailNettingReportsPage() {
     return tNo.includes(q) || `tank ${tNo}`.includes(q) || `tank${tNo}`.includes(q);
   });
 
+  // Helper to capture full table canvas using live DOM bounding box measurements
+  const captureTableCanvas = async (element) => {
+    const liveTable = element.tagName === 'TABLE' ? element : (element.querySelector('table') || element);
+    const liveRows = Array.from(liveTable.querySelectorAll('tr'));
+    const liveCells = Array.from(liveTable.querySelectorAll('th, td'));
+
+    const cellStyles = liveCells.map((cell) => {
+      const rect = cell.getBoundingClientRect();
+      return {
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+
+    const rowHeights = liveRows.map((row) => row.getBoundingClientRect().height);
+
+    // Measure full content dimensions instead of viewport getBoundingClientRect()
+    const fullWidth = Math.max(liveTable.scrollWidth, liveTable.offsetWidth, 2300);
+    const fullHeight = Math.max(liveTable.scrollHeight, liveTable.offsetHeight);
+
+    return await html2canvas(liveTable, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      width: fullWidth,
+      height: fullHeight,
+      windowWidth: fullWidth + 100,
+      scrollX: 0,
+      scrollY: 0,
+      onclone: (clonedDoc) => {
+        const clonedTable = clonedDoc.querySelector('table') || clonedDoc.body.querySelector('table');
+        if (!clonedTable) return;
+
+        // Reset scroll and width constraints on cloned table parent wrappers
+        let parent = clonedTable.parentElement;
+        while (parent && parent !== clonedDoc.body) {
+          parent.style.overflow = 'visible';
+          parent.style.overflowX = 'visible';
+          parent.style.maxWidth = 'none';
+          parent.style.width = 'auto';
+          parent = parent.parentElement;
+        }
+
+        clonedTable.style.width = `${fullWidth}px`;
+        clonedTable.style.minWidth = `${fullWidth}px`;
+        clonedTable.style.maxWidth = 'none';
+        clonedTable.style.tableLayout = 'fixed';
+
+        const clonedRows = Array.from(clonedTable.querySelectorAll('tr'));
+        const clonedCells = Array.from(clonedTable.querySelectorAll('th, td'));
+
+        clonedRows.forEach((row, i) => {
+          if (rowHeights[i]) {
+            row.style.height = `${rowHeights[i]}px`;
+            row.style.minHeight = `${rowHeights[i]}px`;
+            row.style.maxHeight = `${rowHeights[i]}px`;
+          }
+        });
+
+        clonedCells.forEach((cell, i) => {
+          if (cellStyles[i]) {
+            cell.style.width = `${cellStyles[i].width}px`;
+            cell.style.minWidth = `${cellStyles[i].width}px`;
+            cell.style.maxWidth = `${cellStyles[i].width}px`;
+            if (!cell.rowSpan || cell.rowSpan <= 1) {
+              cell.style.height = `${cellStyles[i].height}px`;
+            }
+            cell.style.boxSizing = 'border-box';
+          }
+        });
+      },
+    });
+  };
+
   // Download Handlers
   const exportExcel = () => {
     try {
       const element = tableRef.current;
-      const wb = XLSX.utils.table_to_book(element, { sheet: 'Trail Netting Report' });
+      if (!element) return;
+      const tableEl = element.tagName === 'TABLE' ? element : (element.querySelector('table') || element);
+      const wb = XLSX.utils.table_to_book(tableEl, { sheet: 'Trail Netting Report' });
       XLSX.writeFile(wb, `Trail_Netting_Report_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Excel file downloaded successfully!');
     } catch (err) {
+      console.error('Export Excel Error:', err);
       toast.error('Failed to export Excel file');
     }
   };
@@ -240,7 +199,10 @@ export default function TrailNettingReportsPage() {
   const exportImage = async (format = 'png') => {
     try {
       const element = tableRef.current;
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      if (!element) return;
+
+      const canvas = await captureTableCanvas(element);
+
       const imgData = canvas.toDataURL(`image/${format}`);
       const link = document.createElement('a');
       link.href = imgData;
@@ -248,6 +210,7 @@ export default function TrailNettingReportsPage() {
       link.click();
       toast.success(`Image (${format.toUpperCase()}) downloaded successfully!`);
     } catch (err) {
+      console.error('Export Image Error:', err);
       toast.error('Failed to export Image');
     }
   };
@@ -255,18 +218,70 @@ export default function TrailNettingReportsPage() {
   const exportPDF = async () => {
     try {
       const element = tableRef.current;
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+      if (!element) return;
+
+      const canvas = await captureTableCanvas(element);
+
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('landscape', 'mm', 'a3');
       const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
 
-      pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
+      const margin = 10;
+      const printableWidth = pdfWidth - (margin * 2);
+      const renderHeight = (imgProps.height * printableWidth) / imgProps.width;
+      const printableHeight = pdfHeight - (margin * 2);
+
+      let heightLeft = renderHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'PNG', margin, position, printableWidth, renderHeight);
+      heightLeft -= printableHeight;
+
+      while (heightLeft > 0) {
+        position = position - printableHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, position, printableWidth, renderHeight);
+        heightLeft -= printableHeight;
+      }
+
       pdf.save(`Trail_Netting_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
       toast.success('PDF downloaded successfully!');
     } catch (err) {
+      console.error('Export PDF Error:', err);
       toast.error('Failed to export PDF');
+    }
+  };
+
+  const handleCompleted = async () => {
+    if (!tankId) return;
+    try {
+      const targetReports = reports.filter(r => String(r.tank_id) === String(tankId) && r.process_details?.status === 'draft');
+      if (!targetReports.length) {
+        // Fallback: if no draft found, maybe already completed.
+        navigate('/app/trail-netting', { state: { activeTab: 'history' } });
+        return;
+      }
+
+      for (const rep of targetReports) {
+        const newProcessDetails = {
+          ...(rep.process_details || {}),
+          status: 'completed'
+        };
+        const { error } = await supabase
+          .from(TABLES.trailNettingReports)
+          .update({ process_details: newProcessDetails })
+          .eq('tank_id', rep.tank_id)
+          .eq('latest_date', rep.latest_date);
+
+        if (error) throw error;
+      }
+
+      toast.success('Trail Netting completed and added to History!');
+      navigate('/app/trail-netting', { state: { activeTab: 'history' } });
+    } catch (err) {
+      toast.error('Failed to complete: ' + err.message);
     }
   };
 
@@ -320,14 +335,14 @@ export default function TrailNettingReportsPage() {
 
       {/* Report Table Card Container */}
       <div className="bg-white rounded-2xl p-4 border border-slate-300 shadow-md space-y-4 overflow-hidden">
-        <div className="overflow-x-auto scroll-thin max-w-full" ref={tableRef}>
-          <table className="w-full text-xs text-left border-collapse font-sans min-w-[2300px]">
+        <div className="overflow-x-auto scroll-thin max-w-full">
+          <table ref={tableRef} className="w-full text-xs text-left border-collapse font-sans min-w-[2300px]">
             <thead>
               {/* Title Banner Header Row */}
-              <tr>
+              <tr className="h-[34px]">
                 <th
                   colSpan={39}
-                  className="text-center font-extrabold text-slate-900 py-2.5 text-sm tracking-wide uppercase border border-slate-400"
+                  className="text-center font-extrabold text-slate-900 py-2 text-sm tracking-wide uppercase border border-slate-400 align-middle box-border"
                   style={{ background: '#f8cbad' }}
                 >
                   Trail Netting Report & Pattubadi Planning
@@ -335,57 +350,57 @@ export default function TrailNettingReportsPage() {
               </tr>
 
               {/* Multilevel Column Header Row 1 */}
-              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[11px]">
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[70px]" style={{ background: '#00e5ff' }}>
+              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[11px] leading-tight h-[34px]">
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]" style={{ background: '#00e5ff' }}>
                   Tank Nos
                 </th>
-                <th rowSpan={2} className="p-2 border border-slate-400 min-w-[160px]">Hatchery</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[80px]">Seed Stocked</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[80px]">Survived Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[50px]">DOC</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px]">Latest Date</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px]">Previ Date</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[65px]">Latest Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[65px]">Previ Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[65px]">Count Diff</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[65px]">Groth Diff</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[95px]">Wkly Grth as per Trail Netting</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px]">Betw Period Feed Consp</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[95px]">Betw Period Growth In Kgs</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[85px]">Betw Period FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[80px]">Feed Consp</th>
-                <th colSpan={3} className="p-1.5 border border-slate-400 text-center bg-amber-100/80">Middle 1</th>
-                <th colSpan={3} className="p-1.5 border border-slate-400 text-center bg-amber-100/80">Middle 2</th>
-                <th colSpan={3} className="p-1.5 border border-slate-400 text-center bg-amber-100/80">Middle 3</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[95px]">Middle Harvested Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[95px]">Remaining Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px]">Middle Tonnage Total</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px]">Remaining Tonnage</th>
-                <th colSpan={2} className="p-1.5 border border-slate-400 text-center">If FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[70px]">Expected FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[120px]">Expected Tonnage related to Feed & FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[70px]">Trailnet Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[130px]">Expected Tonnage related to Rem Seed & Trailnet Count</th>
-                <th colSpan={2} className="p-1.5 border border-slate-400 text-center">Final Harvest</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[95px]">Total Seed Catched</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[65px]">Survival %</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-left min-w-[160px] align-middle box-border h-[68px]">Hatchery</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Seed Stocked</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Survived Seed</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[55px] align-middle box-border h-[68px]">DOC</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[68px]">Latest Date</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[68px]">Previ Date</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Latest Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Previ Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Count Diff</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Groth Diff</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[120px] align-middle box-border h-[68px]">Wkly Grth as per Trail Netting</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Betw Period Feed Consp</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[110px] align-middle box-border h-[68px]">Betw Period Growth In Kgs</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Betw Period FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[85px] align-middle box-border h-[68px]">Feed Consp</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 1</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 2</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 3</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[115px] align-middle box-border h-[68px]">Middle Harvested Seed</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Seed</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Middle Tonnage Total</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Tonnage</th>
+                <th colSpan={2} className="py-1 px-1 border border-slate-400 text-center align-middle box-border h-[34px]">If FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]">Expected FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[150px] align-middle box-border h-[68px]">Expected Tonnage related to Feed & FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]">Trailnet Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[160px] align-middle box-border h-[68px]">Expected Tonnage related to Rem Seed & Trailnet Count</th>
+                <th colSpan={2} className="py-1 px-1 border border-slate-400 text-center align-middle box-border h-[34px]">Final Harvest</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Total Seed Catched</th>
+                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[75px] align-middle box-border h-[68px]">Survival %</th>
               </tr>
 
               {/* Subheader Row 2 */}
-              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[10px]">
-                <th className="p-1.5 border border-slate-400 text-center min-w-[85px]">Middle Date</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[60px]">Tonnage</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[55px]">Count</th>
-                <th className="p-1.5 border border-slate-400 text-center min-w-[85px]">Middle Date</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[60px]">Tonnage</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[55px]">Count</th>
-                <th className="p-1.5 border border-slate-400 text-center min-w-[85px]">Middle Date</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[60px]">Tonnage</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[55px]">Count</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[60px]">1.2</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[60px]">1.3</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[85px]">Tonnage</th>
-                <th className="p-1.5 border border-slate-400 text-right min-w-[55px]">Count</th>
+              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[10px] leading-tight h-[34px]">
+                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">1.2</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">1.3</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[85px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
               </tr>
             </thead>
 
@@ -393,7 +408,15 @@ export default function TrailNettingReportsPage() {
             <tbody className="divide-y divide-slate-300 font-mono text-slate-900">
               {filteredRows.length > 0 ? (
                 filteredRows.map((r, i) => (
-                  <tr key={i} className="hover:bg-amber-50/50 transition">
+                  <tr
+                    key={i}
+                    onClick={() => {
+                      const matchedTank = tanks.find((t) => t.id === r.tank_id || t.name === r.tankNo);
+                      setSelectedHistoryItem({ tank: matchedTank, report: r.rawReport || r });
+                    }}
+                    className="hover:bg-amber-100/60 cursor-pointer transition"
+                    title="Click to view complete Trail Netting process details"
+                  >
                     <td className="p-2 border border-slate-300 font-bold text-center" style={{ background: '#00ffff' }}>
                       {r.tankNo}
                     </td>
@@ -479,6 +502,26 @@ export default function TrailNettingReportsPage() {
           </button>
         </div>
       </div>
+
+      {/* "Completed" Action Button - ONLY when navigating from a specific tank's flow */}
+      {tankId && (
+        <div className="pt-2">
+          <button
+            onClick={handleCompleted}
+            className="btn-primary w-full py-4 text-lg font-black flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition bg-emerald-600 hover:bg-emerald-700 border-none text-white rounded-xl"
+          >
+            ✅ Completed
+          </button>
+        </div>
+      )}
+
+      {/* Complete Process Details Modal */}
+      <TrailNettingHistoryModal
+        isOpen={!!selectedHistoryItem}
+        onClose={() => setSelectedHistoryItem(null)}
+        tank={selectedHistoryItem?.tank}
+        report={selectedHistoryItem?.report}
+      />
     </div>
   );
 }

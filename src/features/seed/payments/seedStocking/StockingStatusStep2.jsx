@@ -1,8 +1,11 @@
 import { useState, useMemo } from 'react';
 import SignaturePad from './SignaturePad';
 import { useToast } from '../../../../hooks/useToast';
+import { useAuth } from '../../../../hooks/useAuth';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
+import CameraCapture from '../../../../components/ui/CameraCapture';
 import { aggregateTankStates } from './stockingUtils';
+import { generateReturnBill } from '../returnBillHelper';
 
 export default function StockingStatusStep2({ step1Data, activeOrder, siteId, selectedVehicle = null, isSaved = false, initialStep2Data = null, onNext, onContinue = null, onBack = null }) {
   const toast = useToast();
@@ -62,6 +65,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
     return map;
   });
 
+  const { user } = useAuth();
   const [transfers, setTransfers] = useState(() => initialStep2Data?.transfers || []);
   const [returnBills, setReturnBills] = useState(() => initialStep2Data?.returnBills || []);
 
@@ -75,10 +79,26 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
   const [transferAmountInput, setTransferAmountInput] = useState('');
   const [returnReason, setReturnReason] = useState('');
   const [returnCountInput, setReturnCountInput] = useState('');
+  const [returnPhoto, setReturnPhoto] = useState(null);
+  const [returnVideo, setReturnVideo] = useState(null);
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
+  const [isCapturingVideo, setIsCapturingVideo] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const handleFileUpload = (e, setFileState) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFileState(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Apply Status Update
   async function applyStatusUpdate(tankKey, status, transferTarget = null) {
+    if (isSubmitting) return;
     const currentTank = tankStates[tankKey];
     if (!currentTank) return;
 
@@ -88,44 +108,58 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
         return toast.error(`Invalid return amount! Must be between 1 and ${currentTank.currentCount}.`);
       }
 
-      const remainingAmt = currentTank.currentCount - returnedSeedCount;
-      const newStatus = remainingAmt === 0 ? 'returned' : 'Partial Return';
+      setIsSubmitting(true);
+      try {
+        const remainingAmt = currentTank.currentCount - returnedSeedCount;
+        const newStatus = remainingAmt === 0 ? 'returned' : 'Partial Return';
 
-      const retBillPayload = {
-        site_id: siteId,
-        original_bill_id: activeOrder?.id || null,
-        original_bill_number: activeOrder?.bill_number || 'N/A',
-        bill_number: `RET-${activeOrder?.bill_number || 'ORD'}-${Date.now().toString().slice(-4)}`,
-        type: 'return_bill',
-        date: new Date().toISOString(),
-        drum_name: currentTank.tankName,
-        original_tank: currentTank.tankName,
-        seed_count_returned: returnedSeedCount,
-        hatchery: activeOrder?.hatchery || 'N/A',
-        supervisor_name: 'Field Supervisor',
-        supervisor_phone: 'N/A',
-        reason: returnReason || 'Return during stocking',
-        status: 'pending_finance',
-        created_at: new Date().toISOString(),
-      };
+        const isMixed = activeOrder?.current_stage === 'mixed-allocation' || activeOrder?.seed_mode === 'mixed-allocation';
+        const source = isMixed ? 'Mixed - Seed Van' : 'Seed Van';
 
-      const { data: bRes } = await supabase.from(TABLES.bills).insert(retBillPayload).select();
-      const savedRetBill = (Array.isArray(bRes) ? bRes[0] : bRes) || { id: retBillPayload.bill_number, ...retBillPayload };
+        const { bill: savedRetBill } = await generateReturnBill({
+          siteId,
+          userId: user?.id,
+          activeOrder,
+          vehicleNo: selectedVehicle?.vehicle_no || 'N/A',
+          tankId: currentTank.tankId || currentTank.drumKey,
+          tankName: currentTank.tankName,
+          sourceQty: currentTank.originalCount || currentTank.currentCount,
+          returnedQty: returnedSeedCount,
+          remainingQty: remainingAmt,
+          reason: returnReason || 'Return during stocking',
+          photo: returnPhoto,
+          video: returnVideo,
+          source
+        });
 
-      setReturnBills((prev) => [savedRetBill, ...prev]);
-      toast.success(`Generated Return Bill ${savedRetBill.bill_number} for Finance module!`);
+        setReturnBills((prev) => [savedRetBill, ...prev]);
+        toast.success(`Generated Return Bill ${savedRetBill.bill_number} for Finance module!`);
 
-      setTankStates((prev) => ({
-        ...prev,
-        [tankKey]: {
-          ...currentTank,
-          status: newStatus,
-          originalCount: currentTank.originalCount || currentTank.currentCount,
-          currentCount: remainingAmt,
-          returnReason: returnReason || 'Return during stocking',
-          returnCount: (currentTank.returnCount || 0) + returnedSeedCount,
-        },
-      }));
+        setTankStates((prev) => ({
+          ...prev,
+          [tankKey]: {
+            ...currentTank,
+            status: newStatus,
+            originalCount: currentTank.originalCount || currentTank.currentCount,
+            currentCount: remainingAmt,
+            returnReason: returnReason || 'Return during stocking',
+            returnCount: (currentTank.returnCount || 0) + returnedSeedCount,
+          },
+        }));
+
+        setActiveModalTankKey(null);
+        setSelectedAction(null);
+        setOtherSubAction(null);
+        setReturnCountInput('');
+        setReturnReason('');
+        setReturnPhoto(null);
+        setReturnVideo(null);
+      } catch (err) {
+        console.error(err);
+        toast.error('Failed to generate return bill: ' + (err.message || ''));
+      } finally {
+        setIsSubmitting(false);
+      }
     } else if (status === 'transferred') {
       const transferAmt = Number(transferAmountInput) || currentTank.currentCount;
       if (transferAmt <= 0 || transferAmt > currentTank.currentCount) {
@@ -134,7 +168,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
 
       const remainingAmt = currentTank.currentCount - transferAmt;
       const newStatus = remainingAmt === 0 ? 'transferred' : 'Partial Transfer';
-      
+
       let targetName = '';
       let targetLogName = '';
       let newTankStateUpdates = {};
@@ -143,7 +177,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
       if (transferTargetType === 'new') {
         const newTankName = targetTransferTankName.trim().toUpperCase();
         if (!newTankName) return toast.error('Enter a valid Target Tank Name.');
-        
+
         targetName = newTankName;
         targetLogName = newTankName;
 
@@ -320,7 +354,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
 
       {/* Van Visual Layout Header & Summary */}
       <div className="p-4 rounded-[16px] border space-y-4 bg-slate-50" style={{ borderColor: 'var(--color-border)' }}>
-        
+
         {/* Read-only Van Plan Summary (Requirement #3) */}
         <div className="bg-white rounded-[10px] border shadow-sm overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
           <div className="bg-slate-100 px-4 py-2 border-b font-extrabold text-sm text-slate-800 flex items-center gap-2" style={{ borderColor: 'var(--color-border)' }}>
@@ -359,7 +393,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
               <span className="font-extrabold text-xl text-primary tracking-widest uppercase">Cabin</span>
             </div>
           </div>
-          
+
           <div className="flex justify-between px-20">
             <div className="flex flex-col items-center">
               <span className="font-bold text-sm text-primary tracking-widest uppercase">Left</span>
@@ -391,7 +425,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
             </thead>
             <tbody>
               {(() => {
-                
+
                 const sortedDrums = Object.values(tankStates).sort((a, b) => a.drumNum - b.drumNum);
                 return Array.from({ length: Math.ceil(sortedDrums.length / 2) }).map((_, idx) => {
                   const leftDrum = sortedDrums[idx * 2];
@@ -408,6 +442,12 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                     }
 
                     const tankKey = state.drumKey;
+
+                    const actualTransferred = state.transferredOut || 0;
+                    const actualReturned = returnBills
+                      .filter(r => r.drum_name === state.tankName || r.original_tank === state.tankName)
+                      .reduce((sum, r) => sum + Number(r.seed_count_returned), 0);
+
                     let bgColor = '#f8fafc';
                     let borderColor = 'var(--color-border)';
                     let textColor = '#0f172a';
@@ -447,26 +487,32 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                           {state.tankName}
                         </p>
                         {state.status === 'returned' ? (
-                          <p className="text-[11px] font-black text-amber-700">Returned ({state.returnCount} pcs)</p>
+                          <p className="text-[11px] font-black text-amber-700">Returned ({actualReturned > 0 ? actualReturned : state.originalCount} pcs)</p>
                         ) : state.status === 'transferred' ? (
                           <div className="text-[11px] font-bold mt-1" style={{ color: '#1d4ed8' }}>
                             🔵 Transferred
                           </div>
                         ) : (
                           <>
-                            {(state.transferredOut > 0 || state.returnCount > 0) ? (
+                            {state.status === 'pending' || (state.status === 'completed' && actualTransferred === 0 && actualReturned === 0) ? (
+                              <div className="text-xs font-semibold text-center mt-2" style={{ color: textColor }}>
+                                <span className="block text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Quantity</span>
+                                {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
+                              </div>
+                            ) : (actualTransferred > 0 || actualReturned > 0) ? (
                               <div className="text-[10px] text-left bg-white/60 p-2 rounded mt-2 space-y-1 mx-auto max-w-[200px]">
                                 <p><strong>Source:</strong> {state.tankName}</p>
                                 {state.transferredTo && <p><strong>Target:</strong> {state.transferredTo}</p>}
-                                <p><strong>Original Qty:</strong> {state.originalCount?.toLocaleString('en-IN') || (state.currentCount + (state.transferredOut || 0) + (state.returnCount || 0)).toLocaleString('en-IN')} pcs</p>
-                                {state.transferredOut > 0 && <p><strong>Transferred:</strong> {state.transferredOut?.toLocaleString('en-IN')} pcs</p>}
-                                {state.returnCount > 0 && <p><strong>Returned:</strong> {state.returnCount?.toLocaleString('en-IN')} pcs</p>}
+                                <p><strong>Source Quantity:</strong> {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs</p>
+                                {actualTransferred > 0 && <p><strong>Transferred:</strong> {actualTransferred.toLocaleString('en-IN')} pcs</p>}
+                                {actualReturned > 0 && <p><strong>Returned:</strong> {actualReturned.toLocaleString('en-IN')} pcs</p>}
                                 <p><strong>Remaining:</strong> {state.currentCount?.toLocaleString('en-IN')} pcs</p>
                               </div>
                             ) : (
-                              <p className="text-xs font-semibold" style={{ color: textColor }}>
-                                {state.currentCount.toLocaleString('en-IN')} pcs
-                              </p>
+                              <div className="text-xs font-semibold text-center mt-2" style={{ color: textColor }}>
+                                <span className="block text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Quantity</span>
+                                {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
+                              </div>
                             )}
                           </>
                         )}
@@ -607,13 +653,74 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                     onChange={(e) => setReturnReason(e.target.value)}
                   />
                 </div>
+                {/* Photo upload/capture */}
+                <div>
+                  <label className="field-label text-xs mb-1 block">Photo Evidence (Optional)</label>
+                  {isCapturingPhoto ? (
+                    <CameraCapture
+                      mode="photo"
+                      onCapture={(dataUrl) => { setReturnPhoto(dataUrl); setIsCapturingPhoto(false); }}
+                      onCancel={() => setIsCapturingPhoto(false)}
+                    />
+                  ) : returnPhoto ? (
+                    <div className="space-y-2">
+                      <img src={returnPhoto} alt="Return Evidence" className="w-full max-h-36 object-contain bg-slate-900 rounded-[8px] border" />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setIsCapturingPhoto(true)} className="btn-ghost flex-1 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 rounded">Retake</button>
+                        <button type="button" onClick={() => setReturnPhoto(null)} className="btn-ghost flex-1 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded border border-red-100">Delete</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setIsCapturingPhoto(true)} className="flex-1 btn-ghost p-2.5 flex items-center justify-center gap-1.5 rounded-[8px] border-2 border-dashed border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                        📷 Capture
+                      </button>
+                      <label className="flex-1 btn-ghost p-2.5 flex items-center justify-center gap-1.5 rounded-[8px] border-2 border-dashed border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                        📁 Upload
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, setReturnPhoto)} />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Video upload/capture */}
+                <div>
+                  <label className="field-label text-xs mb-1 block">Video Evidence (Optional)</label>
+                  {isCapturingVideo ? (
+                    <CameraCapture
+                      mode="video"
+                      onCapture={(dataUrl) => { setReturnVideo(dataUrl); setIsCapturingVideo(false); }}
+                      onCancel={() => setIsCapturingVideo(false)}
+                    />
+                  ) : returnVideo ? (
+                    <div className="space-y-2">
+                      <video src={returnVideo} controls className="w-full max-h-36 object-contain bg-slate-900 rounded-[8px] border" />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setIsCapturingVideo(true)} className="btn-ghost flex-1 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 rounded">Retake</button>
+                        <button type="button" onClick={() => setReturnVideo(null)} className="btn-ghost flex-1 py-1.5 text-xs font-bold text-red-600 bg-red-50 rounded border border-red-100">Delete</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => setIsCapturingVideo(true)} className="flex-1 btn-ghost p-2.5 flex items-center justify-center gap-1.5 rounded-[8px] border-2 border-dashed border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                        🎥 Record
+                      </button>
+                      <label className="flex-1 btn-ghost p-2.5 flex items-center justify-center gap-1.5 rounded-[8px] border-2 border-dashed border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer">
+                        📁 Upload
+                        <input type="file" accept="video/*" className="hidden" onChange={(e) => handleFileUpload(e, setReturnVideo)} />
+                      </label>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => applyStatusUpdate(activeModalTankKey, 'returned')}
-                    className="btn-warning flex-1 font-bold text-xs py-2.5 bg-amber-500 text-white rounded"
+                    disabled={isSubmitting}
+                    className="btn-warning flex-1 font-bold text-xs py-2.5 bg-amber-500 text-white rounded disabled:opacity-50"
                   >
-                    Confirm &amp; Generate Return Bill
+                    {isSubmitting ? 'Processing...' : 'Confirm & Generate Return Bill'}
                   </button>
                 </div>
               </div>
@@ -622,7 +729,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
             {otherSubAction === 'transfer' && (
               <div className="space-y-3">
                 <h5 className="font-extrabold text-sm text-sky-800">🔀 Transfer Seed Quantity</h5>
-                
+
                 <div>
                   <label className="field-label text-xs">Quantity to Transfer *</label>
                   <input
@@ -694,14 +801,14 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
                     s.status === 'completed'
                       ? '#dcfce7'
                       : s.status === 'unassigned'
-                      ? '#ef4444'
-                      : '#fef9c3',
+                        ? '#ef4444'
+                        : '#fef9c3',
                   color:
                     s.status === 'completed'
                       ? '#15803d'
                       : s.status === 'unassigned'
-                      ? '#ffffff'
-                      : '#a16207',
+                        ? '#ffffff'
+                        : '#a16207',
                 }}
               >
                 {s.status === 'unassigned' ? 'Select Status' : s.status}
@@ -738,28 +845,6 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
         </div>
       )}
 
-      {/* Return Bills Generated Summary (Requirement #6) */}
-      {returnBills.length > 0 && (
-        <div className="card p-5 space-y-3 border border-amber-300 bg-amber-50/50">
-          <h4 className="font-extrabold text-base text-amber-900 border-b border-amber-200 pb-2 flex items-center gap-2">
-            <span>↩️</span> Return Bills Generated for Finance Module
-          </h4>
-          <div className="space-y-2">
-            {returnBills.map((rb) => (
-              <div key={rb.id} className="p-3 rounded-[10px] bg-white border border-amber-200 text-xs space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="font-extrabold text-amber-900">{rb.bill_number}</span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                    {rb.status}
-                  </span>
-                </div>
-                <p className="text-slate-700">Drum / Tank: <strong>{rb.drum_name}</strong> · Returned Seed Count: <strong>{Number(rb.seed_count_returned).toLocaleString('en-IN')}</strong></p>
-                <p className="text-text-muted">Reason: {rb.reason}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
 
       {/* Navigation Buttons */}

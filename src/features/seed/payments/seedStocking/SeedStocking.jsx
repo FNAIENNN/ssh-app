@@ -16,7 +16,7 @@ import { useMixedAllocationState } from './useMixedAllocationState';
 export default function SeedStocking({ siteId, stockingOrder = null, onStockingCompleted = null }) {
   const { user } = useAuth();
   const toast = useToast();
-  
+
   const {
     activeBill, setActiveBill,
     seedMode, setSeedMode,
@@ -62,6 +62,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
   // Workflow Step State: 1 | 2 | 3 | 'completed'
   const [step, setStep] = useState(1);
+  const [showMixedConfirm, setShowMixedConfirm] = useState(false);
 
 
   const [step1Data, setStep1Data] = useState(() => activeOrder?.van_plan || null);
@@ -71,21 +72,41 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     if (activeOrder) {
       setStep1Data(activeOrder.van_plan || null);
       setStep2Data(activeOrder.stocking_status_data || null);
+      if (activeOrder.stocking_status_data?.supervisorName || activeOrder.supervisor_name) {
+        setCommonSupervisorName(activeOrder.stocking_status_data?.supervisorName || activeOrder.supervisor_name || '');
+      }
+      if (activeOrder.stocking_status_data?.supervisorPhone || activeOrder.stocking_status_data?.supervisorNumber) {
+        setCommonSupervisorPhone(activeOrder.stocking_status_data?.supervisorPhone || activeOrder.stocking_status_data?.supervisorNumber || '');
+      }
+      if (activeOrder.stocking_status_data?.supervisorSignature) {
+        setCommonSupervisorSignature(activeOrder.stocking_status_data.supervisorSignature);
+        setIsSupervisorSaved(true);
+      }
     }
   }, [activeOrder?.id]);
-  
+
+  useEffect(() => {
+    if (seedMode === 'stocking-status') {
+      setStep(2);
+    } else if (seedMode === 'van-plan') {
+      setStep(1);
+    } else if (seedMode === 'outside-workers') {
+      setStep(3);
+    }
+  }, [seedMode]);
+
   const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId) || null;
-  
+
   // Supervisor and Completed states
-  const [commonSupervisorName, setCommonSupervisorName] = useState('');
-  const [commonSupervisorPhone, setCommonSupervisorPhone] = useState('');
-  const [commonSupervisorSignature, setCommonSupervisorSignature] = useState('');
-  const [isSupervisorSaved, setIsSupervisorSaved] = useState(false);
+  const [commonSupervisorName, setCommonSupervisorName] = useState(() => activeOrder?.stocking_status_data?.supervisorName || activeOrder?.supervisor_name || '');
+  const [commonSupervisorPhone, setCommonSupervisorPhone] = useState(() => activeOrder?.stocking_status_data?.supervisorPhone || activeOrder?.stocking_status_data?.supervisorNumber || '');
+  const [commonSupervisorSignature, setCommonSupervisorSignature] = useState(() => activeOrder?.stocking_status_data?.supervisorSignature || '');
+  const [isSupervisorSaved, setIsSupervisorSaved] = useState(() => !!(activeOrder?.stocking_status_data?.supervisorSignature && (activeOrder?.stocking_status_data?.supervisorName || activeOrder?.supervisor_name)));
   const [completedBillData, setCompletedBillData] = useState(null);
   const [exporting, setExporting] = useState(false);
-  
+
   const completedSummaryRef = React.useRef(null);
-  
+
   const handleDownloadPDF = () => { toast.info('PDF download not yet implemented'); };
   const handleDownloadImage = () => { toast.info('Image download not yet implemented'); };
   const handlePrint = () => { window.print(); };
@@ -157,7 +178,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     if (!vehicleId) return toast.error('Please select a vehicle first.');
     const newData = { ...(step1Data || {}), [vehicleId]: data };
     setStep1Data(newData);
-    
+
     if (activeOrder?.id) {
       await autosaveBillStep(
         supabase, TABLES, activeOrder.id,
@@ -179,7 +200,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     const vehicleData = { ...data };
     const newData = { ...(step2Data || {}), [vehicleId]: vehicleData };
     setStep2Data(newData);
-    
+
     if (activeOrder?.id) {
       await autosaveBillStep(
         supabase, TABLES, activeOrder.id,
@@ -193,7 +214,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
   async function handleFinalComplete(step3Data) {
     if (!activeOrder) return;
-    
+
     // Safety check: Do not allow a Mixed order to become Completed earlier.
     const { isMixed, isMixedComplete } = mixedState;
     if (isMixed && !isMixedComplete) {
@@ -234,42 +255,111 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
       throw bErr; // rethrow so OutsideWorkersStep3 catches it and resets submitting
     }
 
-    // 2. Save stocking record in seedEntries
-    await supabase.from(TABLES.seedEntries).insert({
-      site_id: siteId,
-      bill_id: activeOrder.id,
-      date: new Date().toISOString().slice(0, 10),
-      seed_type: activeOrder.seed_type || 'Vannamei',
-      quantity: step1Data?.grandTotal || Number(activeOrder.overall_quantity || 0),
-      pl_size: Number(activeOrder.pl_size) || null,
-      hatchery: activeOrder.hatchery,
-      source: 'stocked',
-      notes: JSON.stringify(payload),
-    });
+    // 2. Save stocking record(s) in seedEntries — one per completed tank
+    //    so Trail Netting can discover stocked tanks via seed_entries.tank_id.
 
     // 3. Update tanks with stocked seed counts
-    if (step2Data?.tankStates) {
+    // step2Data is keyed by vehicleId: { [vehicleId]: { tankStates, transfers, ... }, supervisorName, ... }
+    // Aggregate all tankStates from every vehicle entry
+    const allTankStates = {};
+    if (step2Data) {
+      // Top-level tankStates (legacy / single-vehicle flat structure)
+      if (step2Data.tankStates && typeof step2Data.tankStates === 'object') {
+        Object.assign(allTankStates, step2Data.tankStates);
+      }
+      // Per-vehicle entries (current multi-vehicle structure)
+      for (const [key, value] of Object.entries(step2Data)) {
+        if (
+          key !== 'tankStates' &&
+          key !== 'transfers' &&
+          key !== 'returnBills' &&
+          key !== 'supervisorName' &&
+          key !== 'supervisorPhone' &&
+          key !== 'supervisorNumber' &&
+          key !== 'supervisorSignature' &&
+          key !== 'seedVanCompleted' &&
+          value &&
+          typeof value === 'object' &&
+          value.tankStates &&
+          typeof value.tankStates === 'object'
+        ) {
+          Object.assign(allTankStates, value.tankStates);
+        }
+      }
+    }
+
+    if (Object.keys(allTankStates).length > 0) {
       const { data: siteTanks } = await supabase
         .from(TABLES.tanks)
         .select('id, name')
         .eq('site_id', siteId);
 
-      for (const [tankName, tState] of Object.entries(step2Data.tankStates)) {
-        if (tState.status === 'completed' && tState.currentCount > 0) {
+      const stockingDate = new Date().toISOString().slice(0, 10);
+      for (const [key, tState] of Object.entries(allTankStates)) {
+        if (tState.status === 'completed' && Number(tState.currentCount) > 0) {
+          const actualTankName = String(tState.tankName || key).trim();
+
           const matchedTank = siteTanks?.find(
-            (t) => String(t.name).trim().toLowerCase() === String(tankName).trim().toLowerCase()
+            (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
           );
+
+          const tankData = {
+            quantity: tState.currentCount,
+            seed_type: activeOrder.seed_type || 'Vannamei',
+            hatchery: activeOrder.hatchery || null,
+            start_date: stockingDate,
+          };
+
+          let resolvedTankId = matchedTank?.id || null;
+
           if (matchedTank?.id) {
             await supabase.from(TABLES.tanks).update({
-              quantity: tState.currentCount,
-              seed_type: activeOrder.seed_type || 'Vannamei',
-              hatchery: activeOrder.hatchery || null,
-              start_date: new Date().toISOString().slice(0, 10),
+              ...tankData,
               updated_at: new Date().toISOString(),
             }).eq('id', matchedTank.id);
+          } else {
+            // Tank was created dynamically during Seed Stocking; it must be officially inserted.
+            // Trail Netting Active/Pending relies on tanks existing in the tanks table.
+            const { data: insertedTank } = await supabase.from(TABLES.tanks).insert({
+              site_id: siteId,
+              name: actualTankName,
+              ...tankData,
+              status: 'active', // default status
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).select();
+            const inserted = Array.isArray(insertedTank) ? insertedTank[0] : insertedTank;
+            if (inserted?.id) resolvedTankId = inserted.id;
           }
+
+          // Insert a per-tank seed_entries row with tank_id for Trail Netting discovery
+          await supabase.from(TABLES.seedEntries).insert({
+            tank_id: resolvedTankId,
+            tank_name: actualTankName,
+            site_id: siteId,
+            bill_id: activeOrder.id,
+            date: stockingDate,
+            seed_type: activeOrder.seed_type || 'Vannamei',
+            quantity: tState.currentCount,
+            pl_size: Number(activeOrder.pl_size) || null,
+            hatchery: activeOrder.hatchery,
+            source: 'stocked',
+          });
         }
       }
+    } else {
+      // Fallback: no tank-level data available, save a single aggregate seed_entries row
+      await supabase.from(TABLES.seedEntries).insert({
+        site_id: siteId,
+        bill_id: activeOrder.id,
+        date: new Date().toISOString().slice(0, 10),
+        seed_type: activeOrder.seed_type || 'Vannamei',
+        quantity: step1Data?.grandTotal || Number(activeOrder.overall_quantity || 0),
+        pl_size: Number(activeOrder.pl_size) || null,
+        hatchery: activeOrder.hatchery,
+        source: 'stocked',
+        notes: JSON.stringify(payload),
+      });
     }
 
     // 4. Record timeline milestones
@@ -308,32 +398,55 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     if (!commonSupervisorName.trim() || !commonSupervisorSignature) {
       return toast.error("Please provide Supervisor Name and Signature.");
     }
-    if (activeOrder?.id) {
+    const targetBillId = activeOrder?.id || activeBill?.id;
+    if (targetBillId) {
       try {
-        const payload = { 
-          stocking_status_data: { 
-            ...(step2Data || {}), 
-            supervisorName: commonSupervisorName, 
-            supervisorPhone: commonSupervisorPhone, 
-            supervisorSignature: commonSupervisorSignature, 
-            seedVanCompleted: true 
-          } 
+        const nextStep2Data = {
+          ...(step2Data || {}),
+          supervisorName: commonSupervisorName.trim(),
+          supervisorPhone: commonSupervisorPhone.trim(),
+          supervisorNumber: commonSupervisorPhone.trim(),
+          supervisorSignature: commonSupervisorSignature,
+          seedVanCompleted: true
+        };
+        const payload = {
+          stocking_status_data: nextStep2Data,
+          supervisor_name: commonSupervisorName.trim(),
         };
         console.log("SUPERVISOR SAVE PAYLOAD", payload);
-        
-        const updated = await updateBill(
-          payload,
-          'Supervisor details saved',
-          user?.email
-        );
-        
-        if (updated) {
-          setStep2Data(updated.stocking_status_data);
+
+        let updated = null;
+        try {
+          updated = await autosaveBillStep(
+            supabase,
+            TABLES,
+            targetBillId,
+            payload,
+            'Supervisor details saved',
+            user?.email
+          );
+        } catch (saveErr) {
+          console.warn("autosaveBillStep failed, falling back to local state:", saveErr);
         }
-        
+
+        const finalStep2 = updated?.stocking_status_data || nextStep2Data;
+        setStep2Data(finalStep2);
+        if (activeOrder) {
+          activeOrder.stocking_status_data = finalStep2;
+          activeOrder.supervisor_name = commonSupervisorName.trim();
+        }
+        if (setActiveBill) {
+          setActiveBill((prev) => ({
+            ...(prev || {}),
+            ...(updated || {}),
+            stocking_status_data: finalStep2,
+            supervisor_name: commonSupervisorName.trim()
+          }));
+        }
+
         console.log("SUPERVISOR SAVE SUCCESS");
         toast.success('Supervisor details saved.');
-        
+
         if (isMixed) {
           setSeedMode('mixed-allocation');
         } else {
@@ -350,15 +463,17 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
   // --- EARLY RETURNS FOR STANDALONE MODES ---
   if (seedMode === 'outside-workers-packing') {
     return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <PackingOutsideWorkers
-          initialSupervisorName={commonSupervisorName}
-          onComplete={async (payload) => {
+      <div className="max-w-5xl mx-auto space-y-6">
+        <OutsideWorkersStep3
+          vehicles={vehicles}
+          activeOrder={activeOrder}
+          onComplete={async (step3Data) => {
             if (activeOrder?.id) {
               const newStatus = 'Completed';
+              // Save it to outside_workers_data to unify, not packing_outside_workers_data
               await autosaveBillStep(
                 supabase, TABLES, activeOrder.id,
-                { packing_outside_workers_data: payload, status: newStatus, completion_timestamp: new Date().toISOString() },
+                { outside_workers_data: step3Data, status: newStatus, completion_timestamp: new Date().toISOString() },
                 'Packing Outside Workers Completed',
                 user?.email
               );
@@ -368,7 +483,6 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             setSeedMode('history');
           }}
           onBack={() => setSeedMode('packing')}
-          activeOrder={activeOrder}
           siteId={siteId}
           workSource="Packing"
         />
@@ -383,20 +497,20 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
       {/* GLOBAL BACK BUTTON (Always at the very top) */}
       {seedMode !== 'packing' && seedMode !== 'outside-workers-packing' && seedMode !== 'mixed-allocation' && (
         <div>
-        <button
-          type="button"
-          onClick={() => {
-            if (step === 3) setStep(2);
-            else if (step === 2) setStep(1);
-            else setSeedMode('vehicle-payments');
-          }}
-          className="flex items-center gap-1.5 text-sm font-bold"
-          style={{ color: '#000', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-        >
-          <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
-          <span style={{ color: '#000' }}>Back</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (step === 3) setStep(2);
+              else if (step === 2) setStep(1);
+              else setSeedMode('vehicle-payments');
+            }}
+            className="flex items-center gap-1.5 text-sm font-bold"
+            style={{ color: '#000', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
+            <span style={{ color: '#000' }}>Back</span>
+          </button>
+        </div>
       )}
 
       {/* SEED STOCKING WRAPPER (Header, Tabs, Dropdown) */}
@@ -410,8 +524,8 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               {step === 'completed_summary'
                 ? `Completed Bill: ${completedBillData?.bill_number || activeOrder?.bill_number}`
                 : activeOrder
-                ? `Order: ${activeOrder.bill_number} · ${activeOrder.hatchery || 'Hatchery N/A'}`
-                : 'Select a pending order to start'}
+                  ? `Order: ${activeOrder.bill_number} · ${activeOrder.hatchery || 'Hatchery N/A'}`
+                  : 'Select a pending order to start'}
             </p>
           </div>
 
@@ -828,7 +942,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               type="button"
               onClick={handleDownloadImage}
               disabled={exporting}
-              className="btn-ghost font-bold text-xs px-4 py-2.5 border rounded-[8px] bg-white flex items-center gap-1.5"
+              className="btn-ghost font-bold text-xs px-4 py-2.5 border rounded-[8px] bg-white flex items-center gap-1.5 relative z-10 pointer-events-auto cursor-pointer"
               style={{ borderColor: 'var(--color-border)' }}
             >
               <span>🖼️</span> Download Image (PNG)
@@ -941,16 +1055,57 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               ) : (
                 <div className="text-sm font-bold text-text-muted mt-4">Please select a vehicle above to begin.</div>
               )}
-              {vehicles.length > 0 && vehicles.every(v => !!step1Data?.[v.id]) && (
+              {vehicles.length > 0 && (mixedState.isMixed ? Object.keys(step1Data || {}).length > 0 : vehicles.every(v => !!step1Data?.[v.id])) && (
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => {
+                    if (mixedState.isMixed && vehicles.some(v => !step1Data?.[v.id])) {
+                      setShowMixedConfirm(true);
+                    } else {
+                      setStep(2);
+                    }
+                  }}
                   className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
                 >
                   <span>Continue to Stocking Status</span>
                   <span>➔</span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Mixed Confirm Modal */}
+          {showMixedConfirm && (
+            <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+                <h3 className="font-extrabold text-lg text-slate-800">Unconfigured Vehicle</h3>
+                <p className="text-sm text-slate-600 font-semibold">
+                  Another vehicle is still not configured. Do you want to configure it now?
+                </p>
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMixedConfirm(false);
+                      const unconfigured = vehicles.find(v => !step1Data?.[v.id]);
+                      if (unconfigured) setSelectedVehicleId(unconfigured.id);
+                    }}
+                    className="btn-primary py-2.5 font-bold rounded-[8px]"
+                  >
+                    Yes, Configure Vehicle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMixedConfirm(false);
+                      setStep(2);
+                    }}
+                    className="btn-ghost py-2.5 font-bold rounded-[8px] border border-slate-300 hover:bg-slate-50 text-slate-700"
+                  >
+                    No, Continue
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

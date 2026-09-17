@@ -66,7 +66,7 @@ export function SeedBillProvider({ children, siteId }) {
         .from(TABLES.bills)
         .select('*')
         .eq('site_id', siteId)
-        .in('type', ['seed', 'seed_order', 'return'])
+        .in('type', ['seed', 'seed_order', 'return', 'return_bill'])
         .order('created_at', { ascending: false });
       setAllBills(data ?? []);
     } finally {

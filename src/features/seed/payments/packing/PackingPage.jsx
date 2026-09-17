@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
 import { useToast } from '../../../../hooks/useToast';
 import PackingDetails from './PackingDetails';
@@ -29,6 +29,7 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
       console.log(`Max Editable (Available): ${maxQ} | Restored Qty: ${initialQty === '' ? 'Untouched' : initialQty}`);
 
       return {
+        ...t,
         id: t.id,
         name: t.name,
         maxQuantity: maxQ,
@@ -42,6 +43,10 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
   const [step, setStep] = useState(1); // 1 = Details, 2 = Selection, 3 = Summary
   const [isSaving, setIsSaving] = useState(false);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
+
   const handleComplete = async () => {
     if (!activeOrder?.id) {
       onGoToHistory();
@@ -52,7 +57,7 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
     const existingTanks = activeOrder?.packing_data?.tanks || [];
     const otherTanks = existingTanks.filter(et => !selectedTanks.some(st => st.id === et.id));
     const mergedTanks = [...otherTanks, ...selectedTanks];
-    
+
     const totalQuantity = mergedTanks.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
     const totalPackets = mergedTanks.reduce((sum, t) => sum + (Number(t.numberOfPackets) || 0), 0);
 
@@ -72,14 +77,14 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
         .eq('id', activeOrder.id)
         .select('*')
         .single();
-      
+
       if (error) throw error;
-      
+
       console.log('--- PACKING SAVED ---');
       packingData.tanks.forEach(t => {
         console.log(`Tank: ${t.name}, Saved Packing Used: ${t.quantity}`);
       });
-      
+
       toast.success('Packing details saved successfully!');
       onGoToHistory(updatedBill);
     } catch (err) {
@@ -109,31 +114,32 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
       </div>
 
       {step === 1 && (
-        <PackingDetails 
-          tanks={tanks} 
-          setTanks={setTanks} 
+        <PackingDetails
+          tanks={tanks}
+          setTanks={setTanks}
           vehicles={vehicles}
           activeOrder={activeOrder}
-          onNext={() => setStep(2)} 
+          onNext={() => setStep(2)}
         />
       )}
 
       {step === 2 && (
-        <PackingSelection 
-          tanks={tanks} 
-          setTanks={setTanks} 
+        <PackingSelection
+          tanks={tanks}
+          setTanks={setTanks}
           vehicles={vehicles}
           activeOrder={activeOrder}
-          onProceed={() => setStep(3)} 
+          onProceed={() => setStep(3)}
         />
       )}
 
       {step === 3 && (
         <div className="space-y-4">
-          <PackingSummary 
-            tanks={tanks} 
+          <PackingSummary
+            tanks={tanks}
             vehicles={vehicles}
-            onGoToHistory={handleComplete} 
+            activeOrder={activeOrder}
+            onGoToHistory={handleComplete}
           />
         </div>
       )}

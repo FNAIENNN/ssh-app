@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 export default function PackingDetails({ tanks, setTanks, vehicles = [], activeOrder = null, onNext }) {
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [savedVehicles, setSavedVehicles] = useState(new Set());
+  const [showMixedConfirm, setShowMixedConfirm] = useState(false);
 
   // Update packet count for a specific tank
   const handlePacketsChange = (id, val) => {
@@ -16,10 +17,6 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
     if (val === '' || /^\d+$/.test(val)) {
       setTanks(prev => prev.map(t => {
         if (t.id === id) {
-          const numVal = Number(val);
-          if (numVal > t.maxQuantity) {
-            return { ...t, quantity: t.maxQuantity };
-          }
           return { ...t, quantity: val };
         }
         return t;
@@ -56,7 +53,16 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
       alert("Please enter a valid number of packets for all active tanks assigned to this vehicle.");
       return;
     }
-    
+
+    const exceededQty = vTanks.some(t => {
+      const q = Number(t.quantity) || 0;
+      return q > Number(t.maxQuantity);
+    });
+    if (exceededQty) {
+      alert("Entered packing quantity cannot exceed the available quantity.");
+      return;
+    }
+
     setSavedVehicles(prev => {
       const nextSet = new Set(prev);
       nextSet.add(selectedVehicleId);
@@ -66,9 +72,29 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
 
   const handleNext = () => {
     if (vehicles.length > 0 && savedVehicles.size < vehicles.length) {
-      alert("Please save packing data for all booked vehicles before proceeding.");
+      if (activeOrder?.current_stage === 'mixed-allocation') {
+        if (savedVehicles.size > 0) {
+          setShowMixedConfirm(true);
+          return;
+        } else {
+          alert("Please configure at least one vehicle for Packing.");
+          return;
+        }
+      } else {
+        alert("Please save packing data for all booked vehicles before proceeding.");
+        return;
+      }
+    }
+
+    const anyExceeded = tanks.some(t => {
+      const q = Number(t.quantity) || 0;
+      return q > Number(t.maxQuantity);
+    });
+    if (anyExceeded) {
+      alert("Entered packing quantity cannot exceed the available quantity.");
       return;
     }
+
     onNext();
   };
 
@@ -126,7 +152,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
   return (
     <div className="card p-5 space-y-4 shadow-sm border" style={{ borderColor: 'var(--color-border)' }}>
       <h3 className="font-extrabold text-lg text-primary border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>📦 Step 1: Packing Details</h3>
-      
+
       {vehicles.length === 0 && (
         <div className="p-4 bg-amber-50 text-amber-800 text-sm font-bold border border-amber-200 rounded">
           No vehicles found. Showing all tanks below.
@@ -157,7 +183,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
         const tids = v.tank_ids || v.selectedTanks || [];
         const vTanks = tanks.filter(t => tids.includes(t.id));
         const isSaved = savedVehicles.has(v.id);
-        
+
         return (
           <div key={v.id} className="space-y-3 mb-6 p-4 rounded-[12px] border bg-slate-50 shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
             <div className="flex items-center gap-2 mb-2 pb-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
@@ -170,7 +196,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
                 </h4>
               </div>
             </div>
-            
+
             {vTanks.length > 0 ? (
               renderTankTable(vTanks)
             ) : (
@@ -215,6 +241,40 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
           Next ➔
         </button>
       </div>
+
+      {showMixedConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <h3 className="font-extrabold text-lg text-slate-800">Unconfigured Vehicle</h3>
+            <p className="text-sm text-slate-600 font-semibold">
+              Another vehicle is still not configured. Do you want to configure it now?
+            </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMixedConfirm(false);
+                  const unconfigured = vehicles.find(v => !savedVehicles.has(v.id));
+                  if (unconfigured) setSelectedVehicleId(unconfigured.id);
+                }}
+                className="btn-primary py-2.5 font-bold rounded-[8px]"
+              >
+                Yes, Configure Vehicle
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMixedConfirm(false);
+                  onNext();
+                }}
+                className="btn-ghost py-2.5 font-bold rounded-[8px] border border-slate-300 hover:bg-slate-50 text-slate-700"
+              >
+                No, Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, TABLES } from '../../lib/supabaseClient';
 import { useSite } from '../../hooks/useSite';
@@ -7,10 +7,10 @@ import { nextTrailNettingBillNumber } from '../../lib/bills';
 import { Spinner, Empty } from '../../components/ui/State';
 
 const INITIAL_BATCH_ROWS = [
-  { batch: 'Workers', number: '', amount: '' },
-  { batch: 'Bike', number: '', amount: '' },
-  { batch: 'Beta', number: '', amount: '' },
-  { batch: 'Others', number: '', amount: '' },
+  { id: 'workers', batch: 'Workers', number: '', amount: '', isPermanent: true },
+  { id: 'bike', batch: 'Bike', number: '', amount: '', isPermanent: true },
+  { id: 'beta', batch: 'Beta', number: '', amount: '', isPermanent: true },
+  { id: 'others', batch: 'Others', number: '', amount: '', isPermanent: true },
 ];
 
 export default function TrailNettingPaymentsPage() {
@@ -60,15 +60,34 @@ export default function TrailNettingPaymentsPage() {
     if (!siteId) return;
     setLoading(true);
 
-    // 1. Fetch suppliers
-    const { data: sups } = await supabase
-      .from(TABLES.suppliers)
-      .select('*')
-      .eq('site_id', siteId)
-      .order('name');
-    setSuppliers(sups ?? []);
-    if (sups && sups.length > 0 && !selectedSupplierId) {
-      setSelectedSupplierId(sups[0].id);
+    // 1. Fetch suppliers (from TABLES.suppliers and TABLES.labourSuppliers)
+    const { data: sups } = await supabase.from(TABLES.suppliers).select('*');
+    const { data: lSups } = await supabase.from(TABLES.labourSuppliers).select('*');
+    const { data: hLegacy } = await supabase.from(TABLES.hatcheries).select('*').eq('category', 'outside_worker');
+
+    const combinedSuppliers = [
+      ...(sups ?? []),
+      ...(lSups ?? []).map(l => ({
+        ...l,
+        name: l.supplier_name || l.name,
+      })),
+      ...(hLegacy ?? []).map(h => ({
+        ...h,
+        name: h.supplier_name || h.name || h.hatchery_name,
+      })),
+    ];
+
+    const uniqueMap = new Map();
+    combinedSuppliers.forEach(s => {
+      if (s.id && !uniqueMap.has(s.id)) {
+        uniqueMap.set(s.id, s);
+      }
+    });
+    const finalSuppliers = Array.from(uniqueMap.values());
+
+    setSuppliers(finalSuppliers);
+    if (finalSuppliers.length > 0 && !selectedSupplierId) {
+      setSelectedSupplierId(finalSuppliers[0].id);
     }
 
     // 2. Fetch tanks where trail netting is completed
@@ -194,11 +213,22 @@ export default function TrailNettingPaymentsPage() {
     );
   };
 
-  // Batch Table change handler
-  const handleBatchRowChange = (index, field, value) => {
+  // Batch Table Handlers
+  const handleBatchRowChange = (id, field, value) => {
     setBatchRows((prev) =>
-      prev.map((r, i) => (i === index ? { ...r, [field]: value } : r))
+      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
     );
+  };
+
+  const handleAddRow = () => {
+    setBatchRows((prev) => [
+      ...prev,
+      { id: `dyn-${Date.now()}`, batch: '', number: '', amount: '', isPermanent: false }
+    ]);
+  };
+
+  const handleDeleteRow = (id) => {
+    setBatchRows((prev) => prev.filter((r) => r.id !== id || r.isPermanent));
   };
 
   // Calculated totals for table rows
@@ -329,11 +359,10 @@ export default function TrailNettingPaymentsPage() {
           <button
             type="button"
             onClick={() => setActiveTab('payments')}
-            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${
-              activeTab === 'payments'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${activeTab === 'payments'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
           >
             <span>💵</span> Payments
           </button>
@@ -341,18 +370,16 @@ export default function TrailNettingPaymentsPage() {
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 relative ${
-              activeTab === 'history'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
-            }`}
+            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 relative ${activeTab === 'history'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+              }`}
           >
             <span>🕓</span> History
             {historyBills.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                  activeTab === 'history' ? 'bg-emerald-800 text-white' : 'bg-slate-300 text-slate-700'
-                }`}
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'history' ? 'bg-emerald-800 text-white' : 'bg-slate-300 text-slate-700'
+                  }`}
               >
                 {historyBills.length}
               </span>
@@ -477,11 +504,10 @@ export default function TrailNettingPaymentsPage() {
                         key={t.id}
                         type="button"
                         onClick={() => toggleTankSelection(t.id)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                            : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
-                        }`}
+                        className={`p-3 rounded-xl border text-left transition-all ${isSelected
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 text-slate-800 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] uppercase font-extrabold opacity-80">
@@ -546,23 +572,36 @@ export default function TrailNettingPaymentsPage() {
               <table className="w-full text-left text-sm border-collapse min-w-[500px]">
                 <thead>
                   <tr className="bg-slate-100 border-b border-slate-200 text-xs font-extrabold text-slate-700 uppercase tracking-wider">
-                    <th className="p-3">Trail Netting Batch</th>
-                    <th className="p-3 w-36">Number (Qty)</th>
-                    <th className="p-3 w-36">Amount (Rate)</th>
-                    <th className="p-3 text-right w-44">Total Amount (₹)</th>
+                    <th className="p-3">Item Name</th>
+                    <th className="p-3 w-32">Qty</th>
+                    <th className="p-3 w-32">Rate</th>
+                    <th className="p-3 text-right w-40">Total Amount</th>
+                    <th className="p-3 w-20 text-center">Delete</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {computedBatchRows.map((r, index) => (
-                    <tr key={r.batch} className="hover:bg-slate-50">
-                      <td className="p-3 font-extrabold text-slate-900">{r.batch}</td>
+                  {computedBatchRows.map((r) => (
+                    <tr key={r.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-extrabold text-slate-900">
+                        {r.isPermanent ? (
+                          r.batch
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Item Name"
+                            value={r.batch}
+                            onChange={(e) => handleBatchRowChange(r.id, 'batch', e.target.value)}
+                            className="field py-1.5 px-3 w-full text-sm font-sans"
+                          />
+                        )}
+                      </td>
                       <td className="p-3">
                         <input
                           type="number"
                           step="1"
                           placeholder="0"
                           value={r.number}
-                          onChange={(e) => handleBatchRowChange(index, 'number', e.target.value)}
+                          onChange={(e) => handleBatchRowChange(r.id, 'number', e.target.value)}
                           className="field py-1.5 px-3 w-full text-sm font-mono"
                         />
                       </td>
@@ -572,12 +611,24 @@ export default function TrailNettingPaymentsPage() {
                           step="0.01"
                           placeholder="₹ 0.00"
                           value={r.amount}
-                          onChange={(e) => handleBatchRowChange(index, 'amount', e.target.value)}
+                          onChange={(e) => handleBatchRowChange(r.id, 'amount', e.target.value)}
                           className="field py-1.5 px-3 w-full text-sm font-mono"
                         />
                       </td>
                       <td className="p-3 text-right font-mono font-extrabold text-slate-900 text-base">
                         ₹ {r.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-3 text-center">
+                        {!r.isPermanent && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(r.id)}
+                            className="text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Row"
+                          >
+                            🗑️
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -589,9 +640,20 @@ export default function TrailNettingPaymentsPage() {
                     <td className="p-3 text-right font-mono text-emerald-400 text-lg">
                       ₹ {grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
+                    <td></td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleAddRow}
+                className="btn-secondary text-xs font-bold px-4 py-2 flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200"
+              >
+                + Add Row
+              </button>
             </div>
           </div>
 
@@ -994,25 +1056,31 @@ export default function TrailNettingPaymentsPage() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 font-extrabold text-slate-700">
-                      <th className="p-2.5">Trail Netting Batch</th>
-                      <th className="p-2.5 text-center">Number (Qty)</th>
-                      <th className="p-2.5 text-right">Amount (Rate)</th>
-                      <th className="p-2.5 text-right">Total Amount (₹)</th>
+                      <th className="p-2.5">Item Name</th>
+                      <th className="p-2.5 text-center">Qty</th>
+                      <th className="p-2.5 text-right">Rate</th>
+                      <th className="p-2.5 text-right">Total Amount</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {(selectedBillForView.batch_breakdown || []).map((r) => (
-                      <tr key={r.batch}>
-                        <td className="p-2.5 font-bold text-slate-900">{r.batch}</td>
-                        <td className="p-2.5 text-center font-mono">{r.number || 0}</td>
-                        <td className="p-2.5 text-right font-mono">
-                          ₹ {Number(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold text-slate-900">
-                          ₹ {Number(r.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      const breakdownData = selectedBillForView.batch_breakdown || [];
+                      const flatData = breakdownData.length > 0 && breakdownData[0].rows !== undefined
+                        ? breakdownData.flatMap(b => b.rows)
+                        : breakdownData;
+                      return flatData.map((r, i) => (
+                        <tr key={r.id || r.batch || i}>
+                          <td className="p-2.5 font-bold text-slate-900">{r.batch}</td>
+                          <td className="p-2.5 text-center font-mono">{r.number || 0}</td>
+                          <td className="p-2.5 text-right font-mono">
+                            ₹ {Number(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                            ₹ {Number(r.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      ));
+                    })()}
                     <tr className="bg-slate-900 text-white font-extrabold text-sm">
                       <td colSpan={3} className="p-2.5 text-right uppercase tracking-wider text-xs text-slate-300">
                         Grand Total

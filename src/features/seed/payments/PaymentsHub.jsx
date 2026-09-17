@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { useSite } from '../../../hooks/useSite';
 import { Empty } from '../../../components/ui/State';
 import CentralPayments from './CentralPayments';
-import OutsideWorkers from './outsideWorkers/OutsideWorkers';
-import History from './history/History';
 
 /**
  * Payments card: finance ledger, outside-worker payments, and bill history.
@@ -11,8 +9,6 @@ import History from './history/History';
  */
 const TABS = [
   { id: 'ledger', label: '💳 All Payments' },
-  { id: 'workers', label: '👷 Outside Workers' },
-  { id: 'history', label: '🕓 History' },
 ];
 
 export default function PaymentsHub() {
@@ -42,8 +38,6 @@ export default function PaymentsHub() {
       </div>
 
       {tab === 'ledger' && <CentralPayments />}
-      {tab === 'workers' && <OutsideWorkers siteId={siteId} />}
-      {tab === 'history' && <History siteId={siteId} />}
     </div>
   );
 }

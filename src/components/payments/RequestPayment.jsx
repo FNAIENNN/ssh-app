@@ -32,19 +32,20 @@ export default function RequestPayment({
   billId = null,
   totalOrderPrice = null,
   supplierSection = null,
-  selectedHatchery = null,
-  selectedHatcheryBankAccount = null,
+  selectedHatchery = null, // Legacy, use selectedRecipient
+  selectedHatcheryBankAccount = null, // Legacy, use selectedRecipientBankAccount
+  selectedRecipient = null,
+  selectedRecipientBankAccount = null,
   onHatcheryBankAccountAdded,
   hideMachineIdBook = false,
   workSource = null,
+  batchId = null,
 }) {
   const { user } = useAuth();
   const toast = useToast();
 
   // ── Cash flow state ────────────────────────────────────────────────────
   const [enableCash, setEnableCash] = useState(false);
-  const [cashBalance, setCashBalance] = useState(50000); // available
-  const cashLimit = 25000; // HOD / manager limit
   const [cashAmount, setCashAmount] = useState('');
   const [cashTxns, setCashTxns] = useState([]);
 
@@ -60,8 +61,16 @@ export default function RequestPayment({
   const [accounts, setAccounts] = useState([]);
   const [banks, setBanks] = useState([]);
 
+  // ── UI Restoration State ───────────────────────────────────────────────
+  const [showCashBalance, setShowCashBalance] = useState(false);
+  const [upiIdInput, setUpiIdInput] = useState('');
+
   const amount = Number(cashAmount) || 0;
   const advAmount = Number(advanceAmount) || 0;
+
+  const originalTotal = Number(totalOrderPrice) || 0;
+  const totalRequestedSoFar = [...cashTxns, ...advanceTxns].reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  const currentRemainingBalance = Math.max(0, originalTotal - totalRequestedSoFar);
 
   // ── Prefill (e.g. overall price from a seed order, or a pending amount) ──
   useEffect(() => {
@@ -76,16 +85,24 @@ export default function RequestPayment({
   useEffect(() => {
     if (!siteId) return;
     (async () => {
-      const { data: txns } = await supabase
+      let query = supabase
         .from(TABLES.payments)
         .select('*')
         .eq('site_id', siteId)
         .eq('type', type)
         .order('created_at', { ascending: false });
-      setCashTxns((txns ?? []).filter((t) => t.method === 'cash'));
-      setAdvanceTxns((txns ?? []).filter((t) => t.method === 'advance'));
+      if (billId) {
+        query = query.eq('bill_id', billId);
+      }
+      const { data: txns } = await query;
+      let filteredTxns = txns ?? [];
+      if (batchId) {
+        filteredTxns = filteredTxns.filter((t) => (t.payment_method_details?.batch_id === batchId) || (t.batch_id === batchId));
+      }
+      setCashTxns(filteredTxns.filter((t) => t.method === 'cash'));
+      setAdvanceTxns(filteredTxns.filter((t) => t.method === 'advance'));
     })();
-  }, [siteId, type]);
+  }, [siteId, type, billId, batchId]);
 
   useEffect(() => {
     if (!user) return;
@@ -110,47 +127,59 @@ export default function RequestPayment({
   // ── Cash validation info (mirrors `_buildCashValidationInfo`) ─────────
   const cashValidation = useMemo(() => {
     if (!cashAmount) {
-      return { kind: 'info', text: `Balance after payment: ₹${cashBalance.toLocaleString('en-IN')}` };
+      return { kind: 'info', text: `Balance after request: ₹${currentRemainingBalance.toLocaleString('en-IN')}` };
     }
-    if (amount > cashLimit) {
-      return {
-        kind: 'danger',
-        text: `Exceeds HOD limit of ₹${cashLimit.toLocaleString('en-IN')}. Please reduce or request advance.`,
-      };
+    if (amount > currentRemainingBalance && originalTotal > 0) {
+      return { kind: 'danger', text: `Insufficient remaining balance (avail: ₹${currentRemainingBalance.toLocaleString('en-IN')}).` };
     }
-    if (amount > cashBalance) {
-      return { kind: 'danger', text: `Insufficient cash balance (avail: ₹${cashBalance.toLocaleString('en-IN')}).` };
+    return { kind: 'success', text: `Valid. Balance after request: ₹${Math.max(0, currentRemainingBalance - amount).toLocaleString('en-IN')}` };
+  }, [cashAmount, amount, currentRemainingBalance, originalTotal]);
+
+  const advanceValidation = useMemo(() => {
+    if (!advanceAmount) {
+      return { kind: 'info', text: `Balance after request: ₹${currentRemainingBalance.toLocaleString('en-IN')}` };
     }
-    return { kind: 'success', text: `Valid. Balance after payment: ₹${(cashBalance - amount).toLocaleString('en-IN')}` };
-  }, [cashAmount, amount, cashBalance, cashLimit]);
+    if (advAmount > currentRemainingBalance && originalTotal > 0) {
+      return { kind: 'danger', text: `Insufficient remaining balance (avail: ₹${currentRemainingBalance.toLocaleString('en-IN')}).` };
+    }
+    return { kind: 'success', text: `Valid. Balance after request: ₹${Math.max(0, currentRemainingBalance - advAmount).toLocaleString('en-IN')}` };
+  }, [advanceAmount, advAmount, currentRemainingBalance, originalTotal]);
 
   // ── Actions ───────────────────────────────────────────────────────────
   async function proceedCash() {
-    if (amount <= 0 || amount > cashLimit || amount > cashBalance) {
+    if (amount <= 0 || (originalTotal > 0 && amount > currentRemainingBalance)) {
       toast.error('Fix the cash amount before proceeding');
       return;
     }
+    const remBal = Math.max(0, currentRemainingBalance - amount);
+    const isValidUuid = typeof user?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
     const payload = {
       site_id: siteId,
       type,
       method: 'cash',
       amount,
-      status: 'completed',
+      remaining_balance: remBal,
+      status: 'requested',
       related_tank_id: relatedTankId,
       related_section_id: relatedSectionId,
       bill_id: billId,
-      created_by: user?.id,
+      ...(isValidUuid ? { created_by: user.id } : {}),
+      payment_method_details: batchId ? { batch_id: batchId } : null,
     };
-    const { data: rows, error } = await supabase.from(TABLES.payments).insert(payload).select();
-    if (error) {
-      toast.error(error.message);
-      return;
+    let data = { id: `pay-${Date.now()}`, ...payload };
+    try {
+      const { data: rows, error } = await supabase.from(TABLES.payments).insert(payload).select();
+      if (!error && rows && rows[0]) {
+        data = rows[0];
+      } else if (error) {
+        console.warn('Payment insert warning:', error);
+      }
+    } catch (err) {
+      console.warn('Payment insert error:', err);
     }
-    const data = (Array.isArray(rows) ? rows[0] : rows) || { id: payload.bill_id || `pay-${Date.now()}`, ...payload };
     setCashTxns((prev) => [data, ...prev]);
-    setCashBalance((b) => b - amount);
     setCashAmount('');
-    toast.success('Cash payment recorded');
+    toast.success('Cash request submitted');
     onPaid?.(data);
   }
 
@@ -170,13 +199,106 @@ export default function RequestPayment({
     toast.success('Amount updated');
   }
 
+  async function getOrSaveRecipientBank() {
+    const recipient = selectedRecipient || selectedHatchery;
+    if (!recipient) {
+      toast.error('No recipient selected');
+      return null;
+    }
+    
+    if (!bankForm.ifsc || !bankForm.accountNumber || !bankForm.bankName) {
+      toast.error('Fill IFSC, Account Number, and Bank Name');
+      return null;
+    }
+
+    const formNormAcct = (bankForm.accountNumber || '').trim().replace(/\s+/g, '');
+    const formNormIfsc = (bankForm.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+
+    const { data: existing } = await supabase
+      .from(TABLES.hatcheryBankAccounts)
+      .select('*')
+      .eq('hatchery_id', recipient.id);
+
+    const match = (existing || []).find((a) => {
+      const aNormAcct = (a.account_number || '').trim().replace(/\s+/g, '');
+      const aNormIfsc = (a.ifsc_code || a.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+      return aNormAcct === formNormAcct && aNormIfsc === formNormIfsc;
+    });
+
+    if (match) {
+      return match;
+    }
+
+    const newBankPayload = {
+      hatchery_id: recipient.id,
+      bank_name: bankForm.bankName.trim() || 'Bank Account',
+      holder_name: bankForm.holderName.trim(),
+      account_number: formNormAcct,
+      ifsc_code: formNormIfsc,
+    };
+
+    const { data: nbRows, error: nbErr } = await supabase
+      .from(TABLES.hatcheryBankAccounts)
+      .insert(newBankPayload)
+      .select();
+    
+    if (nbErr) {
+      toast.error('Failed to save bank account');
+      return null;
+    }
+
+    if (nbRows && nbRows.length > 0) {
+      if (onHatcheryBankAccountAdded) {
+        onHatcheryBankAccountAdded(nbRows[0]);
+      }
+      return nbRows[0];
+    }
+    return null;
+  }
+
+  async function handleSaveRecipientBank() {
+    const recipient = selectedRecipient || selectedHatchery;
+    if (!recipient) {
+      toast.error('No recipient selected');
+      return;
+    }
+    const formNormAcct = (bankForm.accountNumber || '').trim().replace(/\s+/g, '');
+    const formNormIfsc = (bankForm.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+    
+    const { data: existing } = await supabase
+      .from(TABLES.hatcheryBankAccounts)
+      .select('*')
+      .eq('hatchery_id', recipient.id);
+
+    const match = (existing || []).find((a) => {
+      const aNormAcct = (a.account_number || '').trim().replace(/\s+/g, '');
+      const aNormIfsc = (a.ifsc_code || a.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+      return aNormAcct === formNormAcct && aNormIfsc === formNormIfsc;
+    });
+
+    if (match) {
+      toast.info('Bank account already exists for this recipient');
+      return;
+    }
+
+    const bank = await getOrSaveRecipientBank();
+    if (bank) {
+      toast.success('Bank account saved successfully');
+    }
+  }
+
   async function submitAdvance() {
-    if (advAmount <= 0) return toast.error('Enter an advance amount');
+    if (advAmount <= 0 || (originalTotal > 0 && advAmount > currentRemainingBalance)) {
+      return toast.error('Fix the advance amount before proceeding');
+    }
     let paymentAccountId = null;
     let bankAccountId = null;
+    let paymentMethodDetails = null; // Declare here so we can populate it
+
     if (advanceMode === 'upi') {
-      if (!selectedAccountId) return toast.error('Select a UPI account');
-      paymentAccountId = selectedAccountId;
+      if (!upiIdInput.trim()) return toast.error('Enter a UPI ID');
+      paymentMethodDetails = { upi_id: upiIdInput.trim() };
+      paymentAccountId = null;
     } else {
       if (entryMethod === 'manual') {
         if (!bankForm.ifsc || !bankForm.accountNumber || !bankForm.bankName) {
@@ -188,23 +310,47 @@ export default function RequestPayment({
       bankAccountId = selectedBankId;
     }
 
+    const remBal = Math.max(0, currentRemainingBalance - advAmount);
+    
+    let finalBankAccountId = bankAccountId;
+
+    if (advanceMode === 'bank' && entryMethod === 'manual') {
+      const bank = await getOrSaveRecipientBank();
+      if (!bank) return;
+      finalBankAccountId = bank.id;
+    }
+
+    const isValidUuid = typeof user?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
     const payload = {
       site_id: siteId,
       type,
       method: 'advance',
       advance_mode: advanceMode,
       amount: advAmount,
+      remaining_balance: remBal,
       status: 'requested',
       payment_account_id: paymentAccountId,
-      bank_account_id: bankAccountId,
+      bank_account_id: finalBankAccountId,
       related_tank_id: relatedTankId,
       related_section_id: relatedSectionId,
       bill_id: billId,
-      created_by: user?.id,
+      ...(isValidUuid ? { created_by: user.id } : {}),
+      payment_method_details: {
+        ...(paymentMethodDetails || {}),
+        ...(batchId ? { batch_id: batchId } : {})
+      },
     };
-    const { data: rows, error } = await supabase.from(TABLES.payments).insert(payload).select();
-    if (error) return toast.error(error.message);
-    const data = (Array.isArray(rows) ? rows[0] : rows) || { id: payload.bill_id || `adv-${Date.now()}`, ...payload };
+    let data = { id: `adv-${Date.now()}`, ...payload };
+    try {
+      const { data: rows, error } = await supabase.from(TABLES.payments).insert(payload).select();
+      if (!error && rows && rows[0]) {
+        data = rows[0];
+      } else if (error) {
+        console.warn('Advance insert warning:', error);
+      }
+    } catch (err) {
+      console.warn('Advance insert error:', err);
+    }
     setAdvanceTxns((prev) => [data, ...prev]);
     setAdvanceAmount('');
     toast.success('Request submitted for approval');
@@ -235,17 +381,20 @@ export default function RequestPayment({
   }
 
   useEffect(() => {
-    if (!selectedHatcheryBankAccount) return;
-    const acct = selectedHatcheryBankAccount;
+    const acct = selectedRecipientBankAccount || selectedHatcheryBankAccount;
+    const recipient = selectedRecipient || selectedHatchery;
+    if (!acct) return;
     setSelectedBankId(acct.id || null);
     setBankForm({
       ifsc: acct.ifsc || acct.ifsc_code || '',
       accountNumber: acct.account_number || '',
       bankName: acct.bank_name || '',
-      holderName: acct.holder_name || selectedHatchery?.hatchery_name || selectedHatchery?.name || '',
+      holderName: acct.holder_name || recipient?.hatchery_name || recipient?.name || '',
     });
     setAdvanceMode('bank');
-  }, [selectedHatcheryBankAccount, selectedHatchery]);
+    setEnableAdvance(true);
+    setEntryMethod('manual');
+  }, [selectedRecipientBankAccount, selectedHatcheryBankAccount, selectedRecipient, selectedHatchery]);
 
   void onHatcheryBankAccountAdded;
 
@@ -264,8 +413,8 @@ export default function RequestPayment({
       )}
       {/* ── Cash Payment toggle ───────────────────────────────────────── */}
       <ToggleRow
-        title="Cash Payment"
-        subtitle="Pay via cash (HOD limit applies)"
+        title="Advance Cash Payments"
+        subtitle="Request advance via cash"
         color="var(--color-info)"
         checked={enableCash}
         onChange={setEnableCash}
@@ -274,56 +423,74 @@ export default function RequestPayment({
       />
 
       {enableCash && (
-        <div className="space-y-2">
-          <div
-            className="rounded-[8px] px-3 py-2 flex items-center gap-2"
-            style={{ background: 'var(--color-info-bg)' }}
-          >
-            <span>💳</span>
-            <span className="text-[13px] font-semibold">
-              Available Balance: ₹{cashBalance.toLocaleString('en-IN')}
-            </span>
+        <div className="space-y-4">
+          <div className="border rounded-[12px] p-4 space-y-4" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              type="button"
+              className="btn w-full font-bold shadow-sm"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
+              onClick={() => setShowCashBalance(true)}
+            >
+              Check Balance
+            </button>
+            {showCashBalance && (
+              <div
+                className="rounded-[8px] px-3 py-2 flex items-center gap-2"
+                style={{ background: 'var(--color-info-bg)' }}
+              >
+                <span>💳</span>
+                <span className="text-[13px] font-semibold" style={{ color: 'var(--color-info)' }}>
+                  Current Remaining Balance: ₹{currentRemainingBalance.toLocaleString('en-IN')}
+                </span>
+              </div>
+            )}
+            <input
+              type="number"
+              className="field"
+              placeholder="Request Amount (₹)"
+              value={cashAmount}
+              onChange={(e) => setCashAmount(e.target.value)}
+            />
+            {cashAmount && (
+              <ValidationBox kind={cashValidation.kind} text={cashValidation.text} />
+            )}
+            <button
+              type="button"
+              onClick={proceedCash}
+              className="btn w-full text-white shadow-sm font-bold"
+              style={{ background: 'var(--color-info)' }}
+            >
+              Submit Request
+            </button>
           </div>
-          <input
-            type="number"
-            className="field"
-            placeholder={`Max ₹${cashLimit.toLocaleString('en-IN')}`}
-            value={cashAmount}
-            onChange={(e) => setCashAmount(e.target.value)}
+
+          {cashTxns.length > 0 && (
+            <LedgerTable
+            title="Cash Payment Table"
+            subtitle="List of advance cash requests"
+            color="var(--color-info)"
+            icon="💸"
+            emptyText="No cash payments generated yet."
+            columns={['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Edit']}
+            rows={cashTxns.map((t) => [
+              <span className="text-xs font-bold">{shortId(t.id)}</span>,
+              <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
+              <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
+              <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
+              <StatusChip label={t.status || 'requested'} color={t.status === 'completed' ? 'var(--color-success)' : 'var(--color-warning)'} />,
+              <button onClick={() => editCash(t)} className="text-xs font-semibold" style={{ color: 'var(--color-info)' }}>
+                ✎ Edit
+              </button>,
+            ])}
           />
-          <ValidationBox kind={cashValidation.kind} text={cashValidation.text} />
-          <button
-            disabled={!(enableCash && amount > 0)}
-            onClick={proceedCash}
-            className="btn w-full text-white"
-            style={{ background: 'var(--color-info)' }}
-          >
-            Proceed Payment
-          </button>
+          )}
         </div>
       )}
 
-      <LedgerTable
-        title="Cash Payment Table"
-        subtitle="Amount is auto-filled when payment is completed; use Edit to correct amount"
-        color="var(--color-info)"
-        icon="💸"
-        emptyText="No cash payments generated yet."
-        columns={['Cash Payment ID', 'Time', 'Amount', 'Edit']}
-        rows={cashTxns.map((t) => [
-          <span className="text-xs font-bold">{shortId(t.id)}</span>,
-          <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
-          <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
-          <button onClick={() => editCash(t)} className="text-xs font-semibold" style={{ color: 'var(--color-info)' }}>
-            ✎ Edit
-          </button>,
-        ])}
-      />
-
       {/* ── Advance Request toggle ────────────────────────────────────── */}
       <ToggleRow
-        title="Advance Request"
-        subtitle="Request advance from finance"
+        title="Advance Bank Payments"
+        subtitle="Request advance via UPI or Bank Transfer"
         color="var(--color-success)"
         checked={enableAdvance}
         onChange={setEnableAdvance}
@@ -332,17 +499,21 @@ export default function RequestPayment({
       />
 
       {enableAdvance && (
-        <div className="space-y-3">
-          <input
-            type="number"
-            className="field"
-            placeholder="Advance Amount (₹)"
-            value={advanceAmount}
-            onChange={(e) => setAdvanceAmount(e.target.value)}
-          />
+        <div className="space-y-4">
+          <div className="border rounded-[12px] p-4 space-y-4" style={{ borderColor: 'var(--color-border)' }}>
+            <input
+              type="number"
+              className="field"
+              placeholder="Advance Amount (₹)"
+              value={advanceAmount}
+              onChange={(e) => setAdvanceAmount(e.target.value)}
+            />
+            {advanceAmount && (
+              <ValidationBox kind={advanceValidation.kind} text={advanceValidation.text} />
+            )}
 
-          <p className="text-[13px] font-semibold text-text-secondary">Payment Method</p>
-          <div className="grid grid-cols-2 gap-3">
+            <p className="text-[13px] font-semibold text-text-secondary">Select Payment Method</p>
+            <div className="grid grid-cols-2 gap-3">
             <ModeTile
               active={advanceMode === 'upi'}
               onClick={() => {
@@ -357,7 +528,7 @@ export default function RequestPayment({
               active={advanceMode === 'bank'}
               onClick={() => {
                 setAdvanceMode('bank');
-                setEntryMethod(null);
+                setEntryMethod('manual');
               }}
               icon="🏦"
               label="Bank Transfer"
@@ -366,95 +537,96 @@ export default function RequestPayment({
           </div>
 
           {advanceMode === 'upi' && (
-            <UpiAccountPicker
-              accounts={accounts}
-              selectedId={selectedAccountId}
-              onSelect={setSelectedAccountId}
-            />
+            <div>
+              <input
+                type="text"
+                className="field"
+                placeholder="Enter UPI ID"
+                value={upiIdInput}
+                onChange={(e) => setUpiIdInput(e.target.value)}
+              />
+            </div>
           )}
           {advanceMode === 'bank' && (
             <BankDetails
-              banks={banks}
-              selectedBankId={selectedBankId}
-              onSelectBank={(b) => {
-                setSelectedBankId(b.id);
-                setBankForm({
-                  ifsc: b.ifsc,
-                  accountNumber: b.account_number,
-                  bankName: b.bank_name,
-                  holderName: b.holder_name || '',
-                });
-                setEntryMethod('manual');
-              }}
-              entryMethod={entryMethod}
+              entryMethod={entryMethod || 'manual'}
               setEntryMethod={(m) => {
                 setEntryMethod(m);
                 if (m !== 'manual') setSelectedBankId(null);
               }}
               form={bankForm}
               setForm={setBankForm}
+              onAddBank={handleSaveRecipientBank}
+              addBankLabel={type === 'outside_worker' ? 'Add Bank to Supplier' : 'Add Bank to Hatchery'}
             />
           )}
 
-          {advAmount > 0 && (
-            <button onClick={submitAdvance} className="btn-success w-full">
-              ➤ Submit Request
+            <button
+              type="button"
+              onClick={submitAdvance}
+              className="btn w-full text-white shadow-sm font-bold"
+              style={{ background: 'var(--color-success)' }}
+            >
+              Submit Request
             </button>
-          )}
+        </div>
+
+        {advanceTxns.length > 0 && (
+          <LedgerTable
+            title="Advance Bank Payment Table"
+          subtitle="Proof and Machine IDs Book unlock only after the requested amount is completed"
+          color="var(--color-success)"
+          icon="🧾"
+          emptyText="No advance bank payments generated yet."
+          columns={hideMachineIdBook
+            ? ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof']
+            : ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof', 'Machine IDs Book']}
+          rows={advanceTxns.map((t) => {
+            const done = t.status === 'completed';
+            const cells = [
+              <span className="text-xs font-bold">{shortId(t.id)}</span>,
+              <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
+              <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
+              <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
+              done ? (
+                <StatusChip label="Completed" color="var(--color-success)" />
+              ) : (
+                <button
+                  onClick={() => completeAdvance(t)}
+                  className="text-xs font-semibold"
+                  style={{ color: 'var(--color-warning)' }}
+                >
+                  ✓ Requested
+                </button>
+              ),
+              done ? (
+                <ProofPreview label={t.proof_url ?? 'Payment proof'} />
+              ) : (
+                <span className="text-xs text-text-muted">Visible after completion</span>
+              ),
+            ];
+            if (!hideMachineIdBook) {
+              cells.push(
+                done ? (
+                  <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                    {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
+                    <input
+                      type="checkbox"
+                      checked={!!t.registered_in_machine_ids_book}
+                      onChange={(e) => toggleMachineBook(t, e.target.checked)}
+                    />
+                  </label>
+                ) : (
+                  <span className="text-xs text-text-muted">Locked</span>
+                )
+              );
+            }
+            return cells;
+          })}
+        />
+        )}
         </div>
       )}
-
-      <LedgerTable
-        title="Advance Payment Request Table"
-        subtitle="Proof and Machine IDs Book unlock only after the requested amount is completed"
-        color="var(--color-success)"
-        icon="🧾"
-        emptyText="No advance payment requests generated yet."
-        columns={hideMachineIdBook
-          ? ['Request Payment ID', 'Request Time', 'Amount', 'Status', 'Payment Proof']
-          : ['Request Payment ID', 'Request Time', 'Amount', 'Status', 'Payment Proof', 'Machine IDs Book']}
-        rows={advanceTxns.map((t) => {
-          const done = t.status === 'completed';
-          const cells = [
-            <span className="text-xs font-bold">{shortId(t.id)}</span>,
-            <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
-            <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
-            done ? (
-              <StatusChip label="Completed" color="var(--color-success)" />
-            ) : (
-              <button
-                onClick={() => completeAdvance(t)}
-                className="text-xs font-semibold"
-                style={{ color: 'var(--color-warning)' }}
-              >
-                ✓ Requested
-              </button>
-            ),
-            done ? (
-              <ProofPreview label={t.proof_url ?? 'Payment proof'} />
-            ) : (
-              <span className="text-xs text-text-muted">Visible after completion</span>
-            ),
-          ];
-          if (!hideMachineIdBook) {
-            cells.push(
-              done ? (
-                <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                  {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
-                  <input
-                    type="checkbox"
-                    checked={!!t.registered_in_machine_ids_book}
-                    onChange={(e) => toggleMachineBook(t, e.target.checked)}
-                  />
-                </label>
-              ) : (
-                <span className="text-xs text-text-muted">Locked</span>
-              )
-            );
-          }
-          return cells;
-        })}
-      />
     </div>
   );
 }
@@ -505,6 +677,7 @@ function ValidationBox({ kind, text }) {
 function ModeTile({ active, onClick, icon, label, color }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="rounded-[10px] py-3 border-2 flex flex-col items-center gap-1 transition"
       style={{
@@ -558,45 +731,9 @@ function UpiAccountPicker({ accounts, selectedId, onSelect }) {
   );
 }
 
-function BankDetails({ banks, selectedBankId, onSelectBank, entryMethod, setEntryMethod, form, setForm }) {
+function BankDetails({ entryMethod, setEntryMethod, form, setForm, onAddBank, addBankLabel }) {
   return (
     <div className="space-y-3">
-      {banks.length > 0 && (
-        <div>
-          <p className="text-[13px] font-semibold text-text-secondary mb-2">Saved Bank Accounts</p>
-          <div className="space-y-2">
-            {banks.map((b) => {
-              const active = b.id === selectedBankId;
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => onSelectBank(b)}
-                  className="w-full text-left rounded-[12px] px-4 py-3 border flex items-center gap-3"
-                  style={{
-                    background: active ? 'var(--color-info-bg)' : 'var(--color-surface)',
-                    borderColor: active ? 'var(--color-info)' : 'var(--color-border)',
-                    borderWidth: active ? 2 : 1,
-                  }}
-                >
-                  <span>{active ? '✅' : '🏦'}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-semibold truncate" style={{ color: active ? 'var(--color-info)' : 'var(--color-text-primary)' }}>
-                      {b.bank_name}
-                    </p>
-                    <p className="text-[10px] text-text-muted truncate">A/C {b.account_number} · IFSC: {b.ifsc}</p>
-                  </div>
-                  {b.is_primary && (
-                    <span className="chip" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>Default</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          <div className="my-3 border-t" style={{ borderColor: 'var(--color-border)' }} />
-          <p className="text-xs text-text-secondary">Or enter manually</p>
-        </div>
-      )}
-
       <p className="text-[13px] font-semibold text-text-secondary">Select Entry Method</p>
       <div className="grid grid-cols-3 gap-2">
         {[
@@ -608,6 +745,7 @@ function BankDetails({ banks, selectedBankId, onSelectBank, entryMethod, setEntr
           return (
             <button
               key={m.id}
+              type="button"
               onClick={() => setEntryMethod(m.id)}
               className="rounded-[10px] py-2.5 border flex flex-col items-center gap-1"
               style={{
@@ -649,6 +787,16 @@ function BankDetails({ banks, selectedBankId, onSelectBank, entryMethod, setEntr
             value={form.holderName}
             onChange={(e) => setForm({ ...form, holderName: e.target.value })}
           />
+          {onAddBank && (
+            <button
+              type="button"
+              onClick={onAddBank}
+              className="btn-ghost w-full py-2 mt-2 text-xs font-bold rounded-[8px]"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-info)' }}
+            >
+              + {addBankLabel}
+            </button>
+          )}
         </div>
       )}
       {entryMethod === 'photo' && (

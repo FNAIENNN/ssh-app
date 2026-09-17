@@ -78,14 +78,39 @@ function loadDb() {
         db.bills.push(sb);
       }
     });
+    if (!Array.isArray(db.hatcheries) || db.hatcheries.length === 0) {
+      db.hatcheries = seed.hatcheries || [];
+    }
+    if (!Array.isArray(db.hatchery_bank_accounts) || db.hatchery_bank_accounts.length === 0) {
+      db.hatchery_bank_accounts = seed.hatchery_bank_accounts || [];
+    }
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  safePersist(STORAGE_KEY, db);
   return db;
 }
 
+function safePersist(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.warn('LocalStorage quota exceeded. Pruning large base64 payloads to fit quota...', err);
+    try {
+      const pruned = JSON.parse(JSON.stringify(data, (k, v) => {
+        if (typeof v === 'string' && v.startsWith('data:') && v.length > 10240) {
+          return 'data:image/png;base64,pruned';
+        }
+        return v;
+      }));
+      localStorage.setItem(key, JSON.stringify(pruned));
+    } catch (fallbackErr) {
+      console.warn('Unable to persist to localStorage; maintaining in memory:', fallbackErr);
+    }
+  }
+}
+
 function saveDb(db) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  safePersist(STORAGE_KEY, db);
 }
 
 export function resetDemoData() {
@@ -370,6 +395,11 @@ function enrich(db, tableKey, r) {
     const t = db.tanks.find((x) => x.id === r.tank_id);
     if (t) r.tanks = { name: t.name };
   }
+  // sections(name) join for tanks table — mirrors what Supabase returns for select('*, sections(name)')
+  if (tableKey === 'tanks' && r.section_id) {
+    const sec = (db.sections || []).find((s) => s.id === r.section_id);
+    if (sec) r.sections = { name: sec.name };
+  }
   // v_seed_entries computed columns
   if (tableKey === 'v_seed_entries' || tableKey === 'seed_entries') {
     r.days_completed = daysCompleted(r);
@@ -473,11 +503,11 @@ export function createLocalClient() {
       const chain = {
         on() { return chain; },
         subscribe(cb) { if (cb) setTimeout(() => cb('SUBSCRIBED'), 0); return chain; },
-        unsubscribe() {},
+        unsubscribe() { },
       };
       return chain;
     },
-    removeChannel() {},
+    removeChannel() { },
 
     storage: {
       from() {

@@ -13,9 +13,9 @@ const WORKER_ROWS = [
   { sNo: 5, category: 'Others' },
 ];
 
-export default function OutsideWorkersStep3({ 
-  initialSupervisorName = '', 
-  onComplete, 
+export default function OutsideWorkersStep3({
+  initialSupervisorName = '',
+  onComplete,
   onBack = null,
   activeOrder = null,
   vehicles = [],
@@ -24,14 +24,14 @@ export default function OutsideWorkersStep3({
   step2Data = null
 }) {
   const toast = useToast();
-  
+
   // Suppliers & Bank Accounts
   const [suppliers, setSuppliers] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [selectedBankAccount, setSelectedBankAccount] = useState(null);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
-  
+
   const [newSupplier, setNewSupplier] = useState({
     supplierName: '',
     holderName: '',
@@ -51,11 +51,30 @@ export default function OutsideWorkersStep3({
   const [submitting, setSubmitting] = useState(false);
 
   const [savedBatches, setSavedBatches] = useState(() => {
-    return activeOrder?.outside_workers_data?.batches || [];
+    if (activeOrder?.outside_workers_data?.batches) {
+      return activeOrder.outside_workers_data.batches;
+    }
+    if (workSource === 'Packing' && activeOrder?.packing_outside_workers_data) {
+      const legacy = activeOrder.packing_outside_workers_data;
+      return [{
+        batchId: `batch-legacy-${Date.now()}`,
+        supplierId: legacy.supplierId,
+        supplierName: legacy.supplierName,
+        selectedBankAccount: legacy.selectedBankAccount,
+        workers: legacy.workers,
+        grandTotal: legacy.grandTotal,
+        remarks: legacy.remarks,
+        supervisorName: legacy.supervisorName,
+        supervisorPhone: legacy.supervisorPhone,
+        supervisorSignature: legacy.supervisorSignature,
+        selectedTanks: []
+      }];
+    }
+    return [];
   });
 
   const [isFormVisible, setIsFormVisible] = useState(() => {
-    const batches = activeOrder?.outside_workers_data?.batches || [];
+    const batches = activeOrder?.outside_workers_data?.batches || (activeOrder?.packing_outside_workers_data ? [1] : []);
     return batches.length === 0;
   });
   const [editingBatchId, setEditingBatchId] = useState(null);
@@ -63,47 +82,80 @@ export default function OutsideWorkersStep3({
 
   const availableTanks = useMemo(() => {
     const tanksMap = new Map();
-    const finalData = step2Data || activeOrder?.stocking_status_data;
-    
-    if (finalData) {
-      Object.entries(finalData).forEach(([vId, vData]) => {
-        if (vId === 'supervisorName' || vId === 'supervisorPhone' || vId === 'supervisorSignature' || vId === 'seedVanCompleted') return;
-        if (!vData || !vData.tankStates) return;
-        
-        const vehicle = vehicles.find(v => v.id === vId);
-        const vehicleNumber = vehicle?.vehicle_number || vehicle?.vehicleName || 'Unknown Vehicle';
-        
-        const aggregated = aggregateTankStates(vData.tankStates, vData.transfers);
-        
-        aggregated.forEach(agg => {
-          if (agg.totalCount > 0) {
-            const origTank = vehicle?.selected_tanks?.find(t => t.name === agg.tankName);
-            tanksMap.set(`${vId}-${agg.tankName}`, {
-              vehicleId: vId,
-              vehicleNumber,
-              tankId: origTank ? origTank.id : (agg.targetTankId || agg.tankName),
-              tankName: agg.tankName,
-              finalQuantity: agg.totalCount
-            });
-          }
-        });
+
+    const isMixed = activeOrder?.current_stage === 'mixed-allocation';
+    const includePacking = workSource === 'Packing' || isMixed;
+    const includeSeedVan = workSource !== 'Packing' || isMixed;
+
+    // ── Packing Tanks Normalization ──
+    if (includePacking) {
+      let packingTanks = [];
+      if (activeOrder?.packing_data?.tanks) {
+        packingTanks = activeOrder.packing_data.tanks;
+      } else if (workSource === 'Packing') {
+        packingTanks = activeOrder?.selected_tanks || [];
+      }
+
+      packingTanks.forEach(t => {
+        if (Number(t.quantity) > 0) {
+          tanksMap.set(`packing-${t.id || t.name}`, {
+            vehicleId: 'packing',
+            vehicleNumber: 'Packing Only',
+            tankId: t.id || t.name,
+            tankName: t.name || t.id,
+            finalQuantity: t.quantity
+          });
+        }
       });
+    }
+
+    // ── Seed Van & Mixed Tanks Normalization ──
+    if (includeSeedVan) {
+      const finalData = step2Data || activeOrder?.stocking_status_data;
+      if (finalData) {
+        Object.entries(finalData).forEach(([vId, vData]) => {
+          if (vId === 'supervisorName' || vId === 'supervisorPhone' || vId === 'supervisorSignature' || vId === 'seedVanCompleted') return;
+          if (!vData || !vData.tankStates) return;
+
+          const vehicle = vehicles.find(v => v.id === vId);
+          const vehicleNumber = vehicle?.vehicle_number || vehicle?.vehicleName || 'Unknown Vehicle';
+
+          const aggregated = aggregateTankStates(vData.tankStates, vData.transfers);
+
+          aggregated.forEach(agg => {
+            if (agg.totalCount > 0) {
+              const origTank = vehicle?.selected_tanks?.find(t => t.name === agg.tankName);
+              tanksMap.set(`${vId}-${agg.tankName}`, {
+                vehicleId: vId,
+                vehicleNumber,
+                tankId: origTank ? origTank.id : (agg.targetTankId || agg.tankName),
+                tankName: agg.tankName,
+                finalQuantity: agg.totalCount
+              });
+            }
+          });
+        });
+      }
     }
 
     const tanks = Array.from(tanksMap.values());
 
-    if (tanks.length === 0) {
+    const hasFinalData = Boolean(step2Data || activeOrder?.stocking_status_data);
+
+    if (includeSeedVan && !hasFinalData) {
       vehicles.forEach(v => {
         if (v.selected_tanks && Array.isArray(v.selected_tanks)) {
           v.selected_tanks.forEach(t => {
-            if (!tanks.find(ex => ex.vehicleId === v.id && ex.tankName === t.name)) {
-              tanks.push({
-                vehicleId: v.id,
-                vehicleNumber: v.vehicle_number || v.vehicleName || 'Unknown Vehicle',
-                tankId: t.id,
-                tankName: t.name,
-                finalQuantity: null
-              });
+            if (t.quantity === undefined || Number(t.quantity) > 0) {
+              if (!tanks.find(ex => ex.vehicleId === v.id && ex.tankName === t.name)) {
+                tanks.push({
+                  vehicleId: v.id,
+                  vehicleNumber: v.vehicle_number || v.vehicleName || 'Unknown Vehicle',
+                  tankId: t.id,
+                  tankName: t.name,
+                  finalQuantity: null
+                });
+              }
             }
           });
         }
@@ -135,10 +187,38 @@ export default function OutsideWorkersStep3({
   useEffect(() => {
     if (!siteId) return;
     (async () => {
-      const { data: sData } = await supabase.from(TABLES.hatcheries).select('*').order('hatchery_name');
-      const { data: bData } = await supabase.from(TABLES.hatcheryBankAccounts).select('*');
-      if (sData) setSuppliers(sData);
-      if (bData) setBankAccounts(bData);
+      // 1. Fetch Outside Worker Suppliers from TABLES.labourSuppliers
+      const { data: sData } = await supabase.from(TABLES.labourSuppliers).select('*');
+
+      // Also fetch legacy outside workers from TABLES.hatcheries if any exist
+      const { data: hLegacy } = await supabase.from(TABLES.hatcheries).select('*').eq('category', 'outside_worker');
+
+      const combinedSuppliers = [
+        ...(sData || []),
+        ...(hLegacy || []).map(h => ({
+          ...h,
+          id: h.id,
+          name: h.supplier_name || h.name || h.hatchery_name,
+          supplier_name: h.supplier_name || h.name || h.hatchery_name,
+        }))
+      ];
+
+      // 2. Fetch Outside Worker Bank Accounts from TABLES.bankAccounts
+      const { data: bData } = await supabase.from(TABLES.bankAccounts).select('*');
+      const { data: hbLegacy } = await supabase.from(TABLES.hatcheryBankAccounts).select('*').eq('category', 'outside_worker');
+
+      const combinedAccounts = [
+        ...(bData || []),
+        ...(hbLegacy || []).map(b => ({
+          ...b,
+          supplier_id: b.hatchery_id,
+          account_number: b.account_number || b.bank_account,
+          ifsc_code: b.ifsc_code || b.ifsc || b.bank_ifsc,
+        }))
+      ];
+
+      setSuppliers(combinedSuppliers);
+      setBankAccounts(combinedAccounts);
     })();
   }, [siteId]);
 
@@ -146,18 +226,67 @@ export default function OutsideWorkersStep3({
     return suppliers.find(s => s.id === selectedSupplierId) || null;
   }, [suppliers, selectedSupplierId]);
 
+  const uniqueSuppliers = useMemo(() => {
+    const unique = [];
+    const seenNames = new Set();
+    for (const s of suppliers) {
+      const nameKey = (s.supplier_name || s.name || s.hatchery_name || '').trim().toLowerCase();
+      if (!nameKey || !seenNames.has(nameKey)) {
+        if (nameKey) seenNames.add(nameKey);
+        unique.push({
+          ...s,
+          displayName: s.supplier_name || s.name || s.hatchery_name || ''
+        });
+      }
+    }
+    return unique;
+  }, [suppliers]);
+
   const activeSupplierAccounts = useMemo(() => {
     if (!selectedSupplier) return [];
-    const accounts = bankAccounts.filter((b) => b.hatchery_id === selectedSupplier.id);
+
+    const selectedName = (selectedSupplier.supplier_name || selectedSupplier.name || selectedSupplier.hatchery_name || '').trim().toLowerCase();
+
+    // Find all supplier IDs in Outside Worker Suppliers with the same supplier name
+    const sameNameSupplierIds = suppliers
+      .filter(s => {
+        const n1 = (s.supplier_name || s.name || s.hatchery_name || '').trim().toLowerCase();
+        return n1 === selectedName;
+      })
+      .map(s => s.id);
+
+    // Isolate accounts belonging to Outside Worker Suppliers in bankAccounts
+    const accounts = bankAccounts.filter((b) => {
+      const sid = b.supplier_id || b.labour_supplier_id || b.hatchery_id;
+      return sameNameSupplierIds.includes(sid);
+    });
+
+    // Also check if selectedSupplier itself has direct bank account fields
+    const directAccounts = [];
+    if (selectedSupplier.account_number || selectedSupplier.bank_account) {
+      directAccounts.push({
+        id: `direct-${selectedSupplier.id}`,
+        supplier_id: selectedSupplier.id,
+        bank_name: selectedSupplier.bank_name || 'Bank Account',
+        holder_name: selectedSupplier.holder_name || selectedSupplier.bank_holder || (selectedSupplier.supplier_name || selectedSupplier.name),
+        account_number: selectedSupplier.account_number || selectedSupplier.bank_account,
+        ifsc_code: selectedSupplier.ifsc_code || selectedSupplier.bank_ifsc || selectedSupplier.ifsc,
+      });
+    }
+
+    const allAccounts = [...accounts, ...directAccounts];
+
     const seen = new Set();
-    return accounts.filter((a) => {
-      const key = `${(a.account_number || '').trim()}_${(a.ifsc_code || a.ifsc || '').trim()}`;
+    return allAccounts.filter((a) => {
+      const normAcct = (a.account_number || a.bank_account || '').trim().replace(/\s+/g, '');
+      const normIfsc = (a.ifsc_code || a.bank_ifsc || a.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
+      const key = `${normAcct}_${normIfsc}`;
       if (!key || key === '_') return true;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
-  }, [selectedSupplier, bankAccounts]);
+  }, [selectedSupplier, suppliers, bankAccounts]);
 
   // Clear selected account if no supplier or no accounts
   useEffect(() => {
@@ -193,30 +322,41 @@ export default function OutsideWorkersStep3({
 
   async function handleAddSupplier() {
     if (!newSupplier.supplierName.trim()) return toast.error('Enter Supplier Name');
-    
-    const hPayload = {
+
+    const supplierName = newSupplier.supplierName.trim();
+    const sPayload = {
       site_id: siteId,
-      hatchery_name: newSupplier.supplierName.trim(),
+      name: supplierName,
+      supplier_name: supplierName,
+      phone: newSupplier.phone ? newSupplier.phone.trim() : '',
       holder_name: newSupplier.holderName.trim(),
+      bank_holder: newSupplier.holderName.trim(),
       account_number: newSupplier.accountNumber.trim(),
+      bank_account: newSupplier.accountNumber.trim(),
       ifsc_code: newSupplier.ifscCode.trim(),
+      bank_ifsc: newSupplier.ifscCode.trim(),
+      bank_name: newSupplier.bankName.trim(),
+      category: 'outside_worker',
+      type: 'outside_worker',
     };
 
-    const { data: hRes, error: hErr } = await supabase.from(TABLES.hatcheries).insert(hPayload).select();
-    if (hErr) return toast.error(hErr.message);
-    const addedSupplier = (Array.isArray(hRes) ? hRes[0] : hRes) || { id: `hatch-${Date.now()}`, ...hPayload };
+    const { data: sRes, error: sErr } = await supabase.from(TABLES.labourSuppliers).insert(sPayload).select();
+    if (sErr) return toast.error(sErr.message);
+    const addedSupplier = (Array.isArray(sRes) ? sRes[0] : sRes) || { id: `ls-${Date.now()}`, ...sPayload };
 
     let addedBank = null;
     if (newSupplier.accountNumber.trim() || newSupplier.ifscCode.trim()) {
       const bPayload = {
-        hatchery_id: addedSupplier.id,
+        supplier_id: addedSupplier.id,
+        labour_supplier_id: addedSupplier.id,
         bank_name: newSupplier.bankName.trim() || 'Bank Account',
         holder_name: newSupplier.holderName.trim(),
         account_number: newSupplier.accountNumber.trim(),
         ifsc_code: newSupplier.ifscCode.trim(),
+        category: 'outside_worker',
       };
-      const { data: bRes } = await supabase.from(TABLES.hatcheryBankAccounts).insert(bPayload).select();
-      addedBank = (Array.isArray(bRes) ? bRes[0] : bRes) || { id: `hba-${Date.now()}`, ...bPayload };
+      const { data: bRes } = await supabase.from(TABLES.bankAccounts).insert(bPayload).select();
+      addedBank = (Array.isArray(bRes) ? bRes[0] : bRes) || { id: `ba-${Date.now()}`, ...bPayload };
       setBankAccounts((prev) => [addedBank, ...prev]);
     }
 
@@ -258,7 +398,7 @@ export default function OutsideWorkersStep3({
         const batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         newBatches.push({ batchId, ...newBatchData });
       }
-      
+
       if (activeOrder?.id) {
         const payload = {
           outside_workers_data: {
@@ -271,7 +411,7 @@ export default function OutsideWorkersStep3({
       }
 
       setSavedBatches(newBatches);
-      
+
       // Reset form
       setTableData(WORKER_ROWS.map((r) => ({ ...r, quantity: '', amount: '' })));
       setRemarks('');
@@ -294,13 +434,13 @@ export default function OutsideWorkersStep3({
     setEditingBatchId(batch.batchId);
     setSelectedSupplierId(batch.supplierId || '');
     setSelectedBankAccount(batch.selectedBankAccount || null);
-    
+
     if (batch.workers && batch.workers.length > 0) {
-       setTableData(batch.workers);
+      setTableData(batch.workers);
     } else {
-       setTableData(WORKER_ROWS.map((r) => ({ ...r, quantity: '', amount: '' })));
+      setTableData(WORKER_ROWS.map((r) => ({ ...r, quantity: '', amount: '' })));
     }
-    
+
     setRemarks(batch.remarks || '');
     setSupervisorName(batch.supervisorName || initialSupervisorName);
     setSupervisorPhone(batch.supervisorPhone || '');
@@ -341,7 +481,7 @@ export default function OutsideWorkersStep3({
       if (!hasWorkers || !selectedSupplierId || !supervisorName.trim() || !supervisorSignature) {
         return toast.error('Please save at least one batch or fill out the form completely.');
       }
-      
+
       const batchId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newBatch = {
         batchId,
@@ -368,7 +508,7 @@ export default function OutsideWorkersStep3({
         // Legacy fallback based on the last batch
         ...finalBatches[finalBatches.length - 1],
       };
-      
+
       await onComplete(finalPayload);
     } catch (err) {
       toast.error(err?.message || 'Error completing Outside Workers data');
@@ -384,7 +524,7 @@ export default function OutsideWorkersStep3({
           + Add Supplier
         </button>
       </div>
-      
+
       {showAddSupplier && (
         <div className="p-4 rounded-[12px] bg-white border border-slate-200 space-y-3 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-text-muted">Add New Supplier</p>
@@ -426,9 +566,9 @@ export default function OutsideWorkersStep3({
         }}
       >
         <option value="">-- Select Registered Supplier --</option>
-        {suppliers.map((s) => (
+        {uniqueSuppliers.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.hatchery_name || s.name} {s.holder_name ? `(${s.holder_name})` : ''}
+            {s.hatchery_name || s.name}
           </option>
         ))}
       </select>
@@ -436,7 +576,7 @@ export default function OutsideWorkersStep3({
       {selectedSupplier && activeSupplierAccounts.length > 0 && (
         <div className="pt-2 border-t mt-3" style={{ borderColor: 'var(--color-border)' }}>
           <p className="text-xs font-bold text-text-secondary mb-2">
-            {selectedBankAccount ? 'Selected Supplier Bank Account' : 'Select Bank Account'}
+            Saved Accounts for {selectedSupplier.hatchery_name || selectedSupplier.name}:
           </p>
           <div className="space-y-2">
             {activeSupplierAccounts.map((acct) => {
@@ -493,8 +633,8 @@ export default function OutsideWorkersStep3({
           </p>
         </div>
       </div>
-       <div className="card p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
-        
+      <div className="card p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
+
         {savedBatches.length > 0 && (
           <div className="space-y-4 mb-6">
             <h4 className="font-extrabold text-lg text-primary border-b pb-2">📦 Saved Batches ({savedBatches.length})</h4>
@@ -505,8 +645,8 @@ export default function OutsideWorkersStep3({
                     <p className="font-extrabold text-emerald-900 text-base">Batch {idx + 1}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-200 px-2 py-1 rounded-full">Saved</span>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => handleEditBatch(batch)}
                         className="text-xs font-bold text-sky-700 bg-sky-100 px-3 py-1 rounded hover:bg-sky-200 transition border border-sky-300"
                       >
@@ -536,12 +676,27 @@ export default function OutsideWorkersStep3({
                       </ul>
                     </div>
                   </div>
+
+                  {/* ── Per-Batch Payment ── */}
+                  <div className="mt-4 pt-4 border-t border-emerald-200 bg-white rounded-[8px] p-4">
+                    <RequestPayment
+                      type="outside_worker"
+                      siteId={siteId}
+                      billId={activeOrder?.id || null}
+                      batchId={batch.batchId}
+                      totalOrderPrice={batch.grandTotal}
+                      selectedRecipient={{ id: batch.supplierId, hatchery_name: batch.supplierName, name: batch.supplierName }}
+                      selectedRecipientBankAccount={batch.selectedBankAccount}
+                      workSource={`${workSource} - Batch ${idx + 1}`}
+                      onHatcheryBankAccountAdded={(acct) => setBankAccounts(prev => [acct, ...prev])}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
             {!isFormVisible && (
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={handleAddNewBatch}
                 className="w-full py-3 mt-2 border-2 border-dashed border-emerald-400 text-emerald-700 font-bold rounded-[10px] hover:bg-emerald-50 transition"
               >
@@ -566,7 +721,7 @@ export default function OutsideWorkersStep3({
                 </button>
               )}
             </div>
-            
+
             {supplierSectionUI}
 
             <h4 className="font-extrabold text-lg text-primary border-b pb-2">Tank Selection</h4>
@@ -586,8 +741,8 @@ export default function OutsideWorkersStep3({
                       }}
                     >
                       <span className="text-xs font-bold" style={{ color: isSelected ? 'var(--color-primary)' : 'inherit' }}>
-                        {(!tOpt.vehicleNumber || tOpt.vehicleNumber === 'Unknown Vehicle' || tOpt.vehicleNumber === 'Unknown' || tOpt.vehicleNumber === 'N/A') 
-                          ? tOpt.tankName 
+                        {(!tOpt.vehicleNumber || tOpt.vehicleNumber === 'Unknown Vehicle' || tOpt.vehicleNumber === 'Unknown' || tOpt.vehicleNumber === 'N/A')
+                          ? tOpt.tankName
                           : `${tOpt.vehicleNumber} - ${tOpt.tankName}`}
                       </span>
                       {isSelected && <span className="text-primary font-bold">✓ Selected</span>}

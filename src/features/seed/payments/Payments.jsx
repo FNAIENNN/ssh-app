@@ -36,7 +36,7 @@ export default function Payments() {
 }
 
 function PaymentsInner({ siteId }) {
-  const { seedMode, setSeedMode, loadBills, activeBill, updateBill } = useSeedBill();
+  const { seedMode, setSeedMode, loadBills, activeBill, allBills, updateBill } = useSeedBill();
   const { user } = useAuth();
 
   // Determine which high-level tab is active based on seedMode
@@ -44,8 +44,8 @@ function PaymentsInner({ siteId }) {
     seedMode === 'history'
       ? 'history'
       : seedMode === 'stocking' || seedMode === 'van-plan' || seedMode === 'stocking-status' || seedMode === 'outside-workers' || seedMode === 'packing' || seedMode === 'outside-workers-packing' || seedMode === 'mixed-allocation'
-      ? 'stocking'
-      : 'seed';
+        ? 'stocking'
+        : 'seed';
 
   // Load bills on mount
   useEffect(() => {
@@ -88,7 +88,7 @@ function PaymentsInner({ siteId }) {
       <div style={{ display: activeTab === 'seed' && seedMode === 'vehicle-payments' ? 'block' : 'none' }}>
         <VehiclePayments
           siteId={siteId}
-          bill={activeBill}
+          bill={activeBill || allBills?.[0]}
           onBack={() => setSeedMode('vehicle')}
           onProceedClicked={async () => {
             await updateBill({ status: 'Pending Seed Stocking', current_stage: 'pending' }, 'Vehicle Payments Finished', user?.email);

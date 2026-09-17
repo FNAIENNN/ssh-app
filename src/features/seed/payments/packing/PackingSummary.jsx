@@ -1,8 +1,8 @@
 import React from 'react';
 
-export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) {
+export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGoToHistory }) {
   const selectedTanks = tanks.filter(t => t.selected);
-  
+
   const finalTanks = selectedTanks;
 
   const totalQuantity = finalTanks.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
@@ -10,7 +10,10 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
 
   const assignedTankIds = new Set();
   vehicles.forEach(v => {
-    (v.tank_ids || v.selectedTanks || []).forEach(tid => assignedTankIds.add(String(tid)));
+    (v.tank_ids || v.selectedTanks || v.selected_tanks || []).forEach(tid => {
+      const idStr = typeof tid === 'object' && tid !== null ? String(tid.id) : String(tid);
+      assignedTankIds.add(idStr);
+    });
   });
 
   const unassignedTanks = finalTanks.filter(t => {
@@ -37,7 +40,7 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
             <div key={t.id} className="p-4 rounded-[12px] border bg-white shadow-sm space-y-2" style={{ borderColor: 'var(--color-border)' }}>
               <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
                 <h4 className="font-extrabold text-slate-800 flex items-center gap-2">
-                   <span>🎯</span> Target Tank: {t.name}
+                  <span>🎯</span> Target Tank: {t.name}
                 </h4>
                 <span className={`px-2 py-1 text-[11px] uppercase font-bold rounded-full ${getStatusColor(t.status)}`}>
                   {t.status || 'Pending'}
@@ -62,18 +65,18 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
         }
 
         const originalQty = t.originalQuantity != null ? t.originalQuantity : t.quantity;
-        
+
         return (
           <div key={t.id} className="p-4 rounded-[12px] border bg-white shadow-sm space-y-4" style={{ borderColor: 'var(--color-border)' }}>
             <div className="flex justify-between items-center pb-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
               <h4 className="font-extrabold text-slate-800 text-lg flex items-center gap-2">
-                 <span>📦</span> {t.name}
+                <span>📦</span> {t.name}
               </h4>
               <span className={`px-3 py-1 text-xs uppercase font-bold rounded-full ${getStatusColor(t.status)}`}>
                 {t.status || 'Pending'}
               </span>
             </div>
-            
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <p className="text-xs text-slate-500 font-bold uppercase">Original</p>
@@ -126,7 +129,7 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
   return (
     <div className="card p-5 space-y-4 shadow-sm border" style={{ borderColor: 'var(--color-border)' }}>
       <h3 className="font-extrabold text-lg text-primary border-b pb-2" style={{ borderColor: 'var(--color-border)' }}>📋 Final Packet Summary</h3>
-      
+
       {vehicles.length === 0 && (
         <div className="p-4 bg-amber-50 text-amber-800 text-sm font-bold border border-amber-200 rounded">
           No vehicles found. Showing all tanks below.
@@ -135,10 +138,13 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
 
       {vehicles.map((v, i) => {
         const vTanks = finalTanks.filter(t => {
+          const checkIds = (v.tank_ids || v.selectedTanks || v.selected_tanks || []).map(tid =>
+            typeof tid === 'object' && tid !== null ? String(tid.id) : String(tid)
+          );
           if (t.isTransferTarget && t.originalTankId) {
-            return (v.tank_ids || v.selectedTanks || []).some(id => String(id) === String(t.originalTankId));
+            return checkIds.includes(String(t.originalTankId));
           }
-          return (v.tank_ids || v.selectedTanks || []).some(id => String(id) === String(t.id));
+          return checkIds.includes(String(t.id));
         });
         if (vTanks.length === 0) return null;
         return (
@@ -192,7 +198,9 @@ export default function PackingSummary({ tanks, vehicles = [], onGoToHistory }) 
           onClick={onGoToHistory}
           className="btn-success px-8 py-3 font-extrabold text-sm shadow-md"
         >
-          Confirm & Continue to Outside Workers ➔
+          {activeOrder?.current_stage === 'mixed-allocation'
+            ? "Confirm Summary & Return to Mixed Workflow ➔"
+            : "Confirm & Continue to Outside Workers ➔"}
         </button>
       </div>
     </div>

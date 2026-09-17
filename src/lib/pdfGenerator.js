@@ -34,7 +34,22 @@ export async function downloadPDF(elementOrId, options = {}) {
       scale: 2,
       useCORS: true,
       logging: false,
-      windowWidth: orientation === 'landscape' ? 1280 : 800,
+      windowWidth: orientation === 'landscape' ? 1280 : 1024,
+      onclone: (clonedDoc) => {
+        // Expand all max-height and overflow constraints in the cloned DOM so PDF captures complete content
+        const elements = clonedDoc.querySelectorAll('*');
+        elements.forEach((el) => {
+          if (el.style) {
+            if (el.style.maxHeight || el.style.overflow || el.style.overflowY) {
+              el.style.maxHeight = 'none';
+              el.style.height = 'auto';
+              el.style.overflow = 'visible';
+              el.style.overflowY = 'visible';
+              el.style.overflowX = 'visible';
+            }
+          }
+        });
+      },
     },
     jsPDF: {
       unit: 'mm',

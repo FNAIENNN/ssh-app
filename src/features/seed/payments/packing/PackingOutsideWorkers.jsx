@@ -12,23 +12,23 @@ const WORKER_ROWS = [
   { sNo: 5, category: 'Others' },
 ];
 
-export default function PackingOutsideWorkers({ 
-  initialSupervisorName = '', 
-  onComplete, 
+export default function PackingOutsideWorkers({
+  initialSupervisorName = '',
+  onComplete,
   onBack = null,
   activeOrder = null,
   siteId = null,
   workSource = 'Packing'
 }) {
   const toast = useToast();
-  
+
   // Suppliers & Bank Accounts
   const [suppliers, setSuppliers] = useState([]);
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState('');
   const [selectedBankAccount, setSelectedBankAccount] = useState(null);
   const [showAddSupplier, setShowAddSupplier] = useState(false);
-  
+
   const [newSupplier, setNewSupplier] = useState({
     supplierName: '',
     holderName: '',
@@ -50,10 +50,38 @@ export default function PackingOutsideWorkers({
   useEffect(() => {
     if (!siteId) return;
     (async () => {
-      const { data: sData } = await supabase.from(TABLES.hatcheries).select('*').order('hatchery_name');
-      const { data: bData } = await supabase.from(TABLES.hatcheryBankAccounts).select('*');
-      if (sData) setSuppliers(sData);
-      if (bData) setBankAccounts(bData);
+      // 1. Fetch Outside Worker Suppliers from TABLES.labourSuppliers
+      const { data: sData } = await supabase.from(TABLES.labourSuppliers).select('*');
+
+      // Also fetch legacy outside workers from TABLES.hatcheries if any exist
+      const { data: hLegacy } = await supabase.from(TABLES.hatcheries).select('*').eq('category', 'outside_worker');
+
+      const combinedSuppliers = [
+        ...(sData || []),
+        ...(hLegacy || []).map(h => ({
+          ...h,
+          id: h.id,
+          name: h.supplier_name || h.name || h.hatchery_name,
+          supplier_name: h.supplier_name || h.name || h.hatchery_name,
+        }))
+      ];
+
+      // 2. Fetch Outside Worker Bank Accounts from TABLES.bankAccounts
+      const { data: bData } = await supabase.from(TABLES.bankAccounts).select('*');
+      const { data: hbLegacy } = await supabase.from(TABLES.hatcheryBankAccounts).select('*').eq('category', 'outside_worker');
+
+      const combinedAccounts = [
+        ...(bData || []),
+        ...(hbLegacy || []).map(b => ({
+          ...b,
+          supplier_id: b.hatchery_id,
+          account_number: b.account_number || b.bank_account,
+          ifsc_code: b.ifsc_code || b.ifsc || b.bank_ifsc,
+        }))
+      ];
+
+      setSuppliers(combinedSuppliers);
+      setBankAccounts(combinedAccounts);
     })();
   }, [siteId]);
 
@@ -61,9 +89,39 @@ export default function PackingOutsideWorkers({
     return suppliers.find(s => s.id === selectedSupplierId) || null;
   }, [suppliers, selectedSupplierId]);
 
+  const uniqueSuppliers = useMemo(() => {
+    const unique = [];
+    const seenNames = new Set();
+    for (const s of suppliers) {
+      const nameKey = (s.supplier_name || s.name || s.hatchery_name || '').trim().toLowerCase();
+      if (!nameKey || !seenNames.has(nameKey)) {
+        if (nameKey) seenNames.add(nameKey);
+        unique.push({
+          ...s,
+          displayName: s.supplier_name || s.name || s.hatchery_name || ''
+        });
+      }
+    }
+    return unique;
+  }, [suppliers]);
+
   const activeSupplierAccounts = useMemo(() => {
     if (!selectedSupplier) return [];
-    const accounts = bankAccounts.filter((b) => b.hatchery_id === selectedSupplier.id);
+
+    const sameNameSupplierIds = suppliers
+      .filter(s => {
+        const n1 = (s.supplier_name || s.name || s.hatchery_name || '').trim().toLowerCase();
+        const n2 = (selectedSupplier.supplier_name || selectedSupplier.name || selectedSupplier.hatchery_name || '').trim().toLowerCase();
+        return n1 === n2;
+      })
+      .map(s => s.id);
+
+    // Isolate accounts belonging to Outside Worker Suppliers in bankAccounts
+    const accounts = bankAccounts.filter((b) => {
+      const supId = b.supplier_id || b.labour_supplier_id || b.hatchery_id;
+      return sameNameSupplierIds.includes(supId);
+    });
+
     const seen = new Set();
     return accounts.filter((a) => {
       const key = `${(a.account_number || '').trim()}_${(a.ifsc_code || a.ifsc || '').trim()}`;
@@ -72,7 +130,7 @@ export default function PackingOutsideWorkers({
       seen.add(key);
       return true;
     });
-  }, [selectedSupplier, bankAccounts]);
+  }, [selectedSupplier, suppliers, bankAccounts]);
 
   // Clear selected account if no supplier or no accounts
   useEffect(() => {
@@ -108,30 +166,35 @@ export default function PackingOutsideWorkers({
 
   async function handleAddSupplier() {
     if (!newSupplier.supplierName.trim()) return toast.error('Enter Supplier Name');
-    
-    const hPayload = {
+
+    const sPayload = {
       site_id: siteId,
-      hatchery_name: newSupplier.supplierName.trim(),
+      name: newSupplier.supplierName.trim(),
+      supplier_name: newSupplier.supplierName.trim(),
       holder_name: newSupplier.holderName.trim(),
       account_number: newSupplier.accountNumber.trim(),
       ifsc_code: newSupplier.ifscCode.trim(),
+      category: 'outside_worker',
+      type: 'outside_worker',
     };
 
-    const { data: hRes, error: hErr } = await supabase.from(TABLES.hatcheries).insert(hPayload).select();
-    if (hErr) return toast.error(hErr.message);
-    const addedSupplier = (Array.isArray(hRes) ? hRes[0] : hRes) || { id: `hatch-${Date.now()}`, ...hPayload };
+    const { data: sRes, error: sErr } = await supabase.from(TABLES.labourSuppliers).insert(sPayload).select();
+    if (sErr) return toast.error(sErr.message);
+    const addedSupplier = (Array.isArray(sRes) ? sRes[0] : sRes) || { id: `ls-${Date.now()}`, ...sPayload };
 
     let addedBank = null;
     if (newSupplier.accountNumber.trim() || newSupplier.ifscCode.trim()) {
       const bPayload = {
-        hatchery_id: addedSupplier.id,
+        supplier_id: addedSupplier.id,
+        labour_supplier_id: addedSupplier.id,
         bank_name: newSupplier.bankName.trim() || 'Bank Account',
         holder_name: newSupplier.holderName.trim(),
         account_number: newSupplier.accountNumber.trim(),
         ifsc_code: newSupplier.ifscCode.trim(),
+        category: 'outside_worker',
       };
-      const { data: bRes } = await supabase.from(TABLES.hatcheryBankAccounts).insert(bPayload).select();
-      addedBank = (Array.isArray(bRes) ? bRes[0] : bRes) || { id: `hba-${Date.now()}`, ...bPayload };
+      const { data: bRes } = await supabase.from(TABLES.bankAccounts).insert(bPayload).select();
+      addedBank = (Array.isArray(bRes) ? bRes[0] : bRes) || { id: `ba-${Date.now()}`, ...bPayload };
       setBankAccounts((prev) => [addedBank, ...prev]);
     }
 
@@ -155,7 +218,7 @@ export default function PackingOutsideWorkers({
       const finalPayload = {
         source: workSource,
         supplierId: selectedSupplierId,
-        supplierName: selectedSupplier?.hatchery_name,
+        supplierName: selectedSupplier?.supplier_name || selectedSupplier?.hatchery_name || selectedSupplier?.name,
         selectedBankAccount,
         workers: calculatedRows,
         grandTotal,
@@ -165,7 +228,7 @@ export default function PackingOutsideWorkers({
         supervisorSignature,
         timestamp: new Date().toISOString()
       };
-      
+
       await onComplete(finalPayload);
     } catch (err) {
       toast.error(err?.message || 'Error saving Outside Workers data');
@@ -181,7 +244,7 @@ export default function PackingOutsideWorkers({
           + Add Supplier
         </button>
       </div>
-      
+
       {showAddSupplier && (
         <div className="p-4 rounded-[12px] bg-white border border-slate-200 space-y-3 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-text-muted">Add New Supplier</p>
@@ -223,9 +286,9 @@ export default function PackingOutsideWorkers({
         }}
       >
         <option value="">-- Select Registered Supplier --</option>
-        {suppliers.map((s) => (
+        {uniqueSuppliers.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.hatchery_name || s.name} {s.holder_name ? `(${s.holder_name})` : ''}
+            {s.displayName || s.supplier_name || s.name || s.hatchery_name}
           </option>
         ))}
       </select>
@@ -233,7 +296,7 @@ export default function PackingOutsideWorkers({
       {selectedSupplier && activeSupplierAccounts.length > 0 && (
         <div className="pt-2 border-t mt-3" style={{ borderColor: 'var(--color-border)' }}>
           <p className="text-xs font-bold text-text-secondary mb-2">
-            {selectedBankAccount ? 'Selected Supplier Bank Account' : 'Select Bank Account'}
+            Saved Accounts for {selectedSupplier.displayName || selectedSupplier.supplier_name || selectedSupplier.name || selectedSupplier.hatchery_name}:
           </p>
           <div className="space-y-2">
             {activeSupplierAccounts.map((acct) => {
@@ -292,7 +355,7 @@ export default function PackingOutsideWorkers({
       </div>
 
       <div className="card p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
-        
+
         <h4 className="font-extrabold text-lg text-primary border-b pb-2">1. Supplier Details</h4>
         {supplierSectionUI}
 
@@ -372,14 +435,15 @@ export default function PackingOutsideWorkers({
 
         {/* Payment Component */}
         <div className="mt-6 border-t pt-6">
-          <RequestPayment 
-            type="outside_worker" 
-            siteId={siteId} 
-            billId={activeOrder?.id || null} 
+          <RequestPayment
+            type="outside_worker"
+            siteId={siteId}
+            billId={activeOrder?.id || null}
             totalOrderPrice={grandTotal}
             selectedHatcheryBankAccount={selectedBankAccount}
             selectedHatchery={selectedSupplier}
             workSource={workSource}
+            onHatcheryBankAccountAdded={(acct) => setBankAccounts(prev => [acct, ...prev])}
           />
         </div>
 

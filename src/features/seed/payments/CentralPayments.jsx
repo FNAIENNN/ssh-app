@@ -12,9 +12,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase, TABLES } from '../../../lib/supabaseClient';
 import { useSite } from '../../../hooks/useSite';
+import { useAuth } from '../../../hooks/useAuth';
 import { useToast } from '../../../hooks/useToast';
 import { Empty } from '../../../components/ui/State';
 import BillDetailsReadOnly from './BillDetailsReadOnly';
+import SeedExchangePaymentsTab from './SeedExchangePaymentsTab';
 
 // Helper to normalize status values into: 'completed', 'pending', 'cancelled'
 function normalizeStatus(status) {
@@ -173,6 +175,7 @@ const STATUS_TABS = [
 
 export default function CentralPayments() {
   const { siteId } = useSite();
+  const { user } = useAuth();
   const toast = useToast();
 
   // Active module tab
@@ -189,12 +192,13 @@ export default function CentralPayments() {
 
   // Raw data state
   const [allRecords, setAllRecords] = useState([]);
+  const [companyBankAccounts, setCompanyBankAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!siteId) return;
+    if (!siteId || !user?.id) return;
     loadData();
-  }, [siteId]);
+  }, [siteId, user?.id]);
 
   async function loadData() {
     setLoading(true);
@@ -210,11 +214,11 @@ export default function CentralPayments() {
         { data: foodOrdersData },
       ] = await Promise.all([
         supabase.from(TABLES.payments).select('*').eq('site_id', siteId).order('created_at', { ascending: false }),
-        supabase.from(TABLES.bills).select('*').eq('site_id', siteId),
+        supabase.from(TABLES.bills).select('*').eq('site_id', siteId).order('created_at', { ascending: false }),
         supabase.from(TABLES.vehicleBookings).select('*').eq('site_id', siteId),
         supabase.from(TABLES.labourSuppliers).select('id, name, phone').eq('site_id', siteId),
         supabase.from(TABLES.hatcheries).select('*'),
-        supabase.from(TABLES.bankAccounts).select('*'),
+        supabase.from(TABLES.bankAccounts).select('*').eq('user_id', user?.id),
         supabase.from(TABLES.exchangeWorkers).select('*').eq('site_id', siteId).order('created_at', { ascending: false }),
         supabase.from(TABLES.foodOrders).select('*').eq('site_id', siteId).order('created_at', { ascending: false }),
       ]);
@@ -233,6 +237,7 @@ export default function CentralPayments() {
 
       const bankMap = {};
       (bankData ?? []).forEach((bk) => { bankMap[bk.id] = bk.holder_name || bk.bank_name; });
+      setCompanyBankAccounts(bankData ?? []);
 
       // Pre-calculate obligation-level completed paid amounts and payment records
       const obligationPaidMap = {};
@@ -283,7 +288,7 @@ export default function CentralPayments() {
           partyName = vNo ? `${driver} (${vNo})` : driver;
         } else if (typeStr === 'outside_worker' || typeStr === 'outside_workers') {
           module = 'seed_stock';
-          
+
           let parsedSource = 'Outside Workers';
           if (p.note && p.note.includes('Work Source: Packing')) {
             parsedSource = 'Packing';
@@ -291,13 +296,13 @@ export default function CentralPayments() {
             parsedSource = 'Seed Stocking';
           }
           processName = parsedSource;
-          
+
           paymentType = 'Outside Worker Payment';
           partyName = p.supplier_id ? (supMap[p.supplier_id] || p.holder_name) : (p.supervisor_name || p.holder_name || p.note || 'Outside Workers');
-          
+
           // Clean up the partyName if it contains Work Source
           if (partyName && partyName.includes('Work Source:')) {
-             partyName = 'Outside Workers';
+            partyName = 'Outside Workers';
           }
         } else {
           // Hatchery Details (Seed Order)
@@ -329,43 +334,9 @@ export default function CentralPayments() {
           totalOrderAmount = vCharge > 0 ? vCharge : (p.remaining_balance != null ? Number(p.amount) + Number(p.remaining_balance) : Number(p.amount));
           remainingOrderAmount = Math.max(0, totalOrderAmount - paidOrderAmount);
         } else if (typeStr === 'return') {
-          module = 'seed_stock';
-          processName = 'Return';
-          paymentType = 'Return Transaction';
-          const b = p.bill_id ? billMap[p.bill_id] : null;
-          const pd = p.packing_data || b?.packing_data || {};
-          
-          let tName = pd?.tank_name || p.note || p.holder_name;
-          
-          if (!tName && pd?.tank_id && pd?.order_id) {
-             const origOrder = billMap[pd.order_id];
-             if (origOrder && origOrder.selected_tanks) {
-                 const st = origOrder.selected_tanks.find(t => String(t.id) === String(pd.tank_id) || String(t.originalTankId) === String(pd.tank_id));
-                 if (st && st.name) tName = st.name;
-             }
-          }
-          
-          if (!tName && p.related_tank_id) {
-             for (const bill of Object.values(billMap)) {
-                 if ((bill.type === 'seed' || bill.type === 'seed_order') && bill.selected_tanks) {
-                     const st = bill.selected_tanks.find(t => String(t.id) === String(p.related_tank_id) || String(t.originalTankId) === String(p.related_tank_id));
-                     if (st && st.name) {
-                         tName = st.name;
-                         break;
-                     }
-                 }
-             }
-          }
-          
-          resolved_tank_name = tName || '—';
-          const vNo = pd?.vehicle_no || p.vehicle_no || p.driver_name || '—';
-          partyName = resolved_tank_name !== '—' ? `${resolved_tank_name} · Tank` : '— · Tank —';
-          methodStr = 'Return';
-
-          // Set financial amounts for the refund to display properly in Central Payments
-          totalOrderAmount = Number(p.amount) || 0;
-          paidOrderAmount = normalizeStatus(p.status) === 'completed' || normalizeStatus(p.status) === 'returned' ? totalOrderAmount : 0;
-          remainingOrderAmount = 0;
+          // SKIP legacy pData returns completely to avoid duplicates.
+          // We construct all return records purely from bData later.
+          return;
         } else if (p.bill_id && billObj) {
           const bPayments = obligationPaymentsMap[key] || [];
           const bTotalPayments = bPayments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
@@ -497,6 +468,106 @@ export default function CentralPayments() {
         });
       });
 
+      // 4. Process Return Bills directly from TABLES.bills
+      (bData ?? []).forEach((b) => {
+        if (b.type === 'return' || b.type === 'return_bill' || b.report_type === 'return_bill') {
+          const docData = b.document_data || {};
+          const pd = b.packing_data || docData.packing_data || {};
+
+          const isStocking = b.type === 'return_bill' || docData.return_source?.includes('Seed Van') || (!pd.tank_id && (b.drum_name || docData.drum_name));
+
+          // Original Order Resolution
+          const origBillId = b.original_bill_id || pd.order_id || docData.original_bill_id;
+          const origOrder = origBillId ? billMap[origBillId] : null;
+
+          const isMixed = origOrder?.seed_mode === 'mixed-allocation' || origOrder?.current_stage === 'mixed-allocation';
+          const defaultSource = isStocking ? 'Seed Van' : 'Packing';
+          const returnSource = docData.return_source || docData.source || (isMixed ? `Mixed - ${defaultSource}` : defaultSource);
+          const processName = returnSource;
+
+          // Data Extraction
+          const returnedQty = isStocking
+            ? Number(b.seed_count_returned || docData.seed_count_returned || docData.returned_qty || 0)
+            : Number(pd.quantity || pd.returned_qty || docData.returned_qty || 0);
+          const returnedPackets = isStocking ? 0 : Number(pd.packets || docData.packets || 0);
+          const reason = b.reason || pd.reason || docData.reason || '—';
+          const hatchery = b.hatchery || docData.hatchery || origOrder?.hatchery || hatchMap[origOrder?.hatchery_id] || '—';
+          const vehicleNo = pd.vehicle_no || b.vehicle_no || docData.vehicle_no || docData.vehicle || '—';
+
+          // Resolve Tank
+          let tankName = b.original_tank || b.drum_name || pd.tank_name || docData.original_tank || docData.drum_name || docData.tank_name || docData.tank || '—';
+          if (tankName === '—' && pd.tank_id && origOrder?.selected_tanks) {
+            const st = origOrder.selected_tanks.find(t => String(t.id) === String(pd.tank_id) || String(t.originalTankId) === String(pd.tank_id));
+            if (st && st.name) tankName = st.name;
+          }
+
+          // Financials
+          const perPiecePrice = Number(docData.per_piece_price) || Number(b.per_piece_price) || Number(origOrder?.per_piece_price) || 0;
+          const originalBillAmount = Number(origOrder?.total_price || origOrder?.grand_total || 0);
+
+          // Calculate refund strictly from total_amount/docData or per_piece_price
+          const refundAmount = Number(b.total_amount) || Number(b.amount) || Number(docData.refund_amount) || (returnedQty * perPiecePrice);
+
+          // If no origOrder, remaining qty is unknown, otherwise deduce
+          let remainingQty = docData.remaining_qty != null ? Number(docData.remaining_qty) : (pd.remaining_qty != null ? Number(pd.remaining_qty) : null);
+          if (remainingQty == null && origOrder && origOrder.selected_tanks) {
+            const st = origOrder.selected_tanks.find(t => String(t.name) === String(tankName) || String(t.id) === String(pd.tank_id));
+            if (st) {
+              const origTankQty = Number(st.initialQty || st.quantity || 0);
+              // For Mixed, tank tracking is complex, we just show generic
+              remainingQty = Math.max(0, origTankQty - returnedQty);
+            }
+          }
+          const returnType = remainingQty === 0 ? 'Full' : 'Partial';
+
+          records.push({
+            id: b.id,
+            site_id: b.site_id,
+            created_at: b.created_at || new Date().toISOString(),
+            module: 'seed_stock',
+            process: processName,
+            payment_type: 'Return Transaction',
+            party: hatchery,
+            amount: refundAmount,
+            total_order_amount: originalBillAmount,
+            paid_order_amount: refundAmount,
+            remaining_order_amount: 0,
+            method: 'Return',
+            status: normalizeStatus(b.finance_status || docData.finance_status || 'pending'),
+            raw_status: b.finance_status || docData.finance_status || b.status || 'returned',
+            finance_status: b.finance_status || docData.finance_status || 'pending',
+            bill_number: b.bill_number || '—',
+            original_bill_number: origOrder?.bill_number || docData.original_bill_number || '—',
+            bill_object: b,
+
+            // Return Specific Fields
+            returned_quantity: returnedQty,
+            returned_packets: returnedPackets,
+            remaining_quantity: remainingQty,
+            reason: reason,
+            vehicle_no: vehicleNo,
+            resolved_tank_name: tankName,
+            per_piece_price: perPiecePrice,
+            return_type: returnType,
+
+            upi_id: '',
+            account_number: '',
+            bank_name: '',
+            ifsc_code: '',
+            holder_name: '',
+            driver_name: '',
+            supervisor_name: b.supervisor_name || '',
+            note: reason,
+            remaining_balance: null,
+            obligation_key: `return_bill_${b.id}`,
+            source_table: 'bills',
+            raw_record: b,
+            packing_data: pd,
+          });
+        }
+      });
+
+      records.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setAllRecords(records);
     } catch (err) {
       console.error('loadData error:', err);
@@ -606,6 +677,7 @@ export default function CentralPayments() {
         <BillDetailsReadOnly
           bill={selectedBillModal}
           onBack={() => setSelectedBillModal(null)}
+          companyBankAccounts={companyBankAccounts}
         />
       </div>
     );
@@ -646,305 +718,305 @@ export default function CentralPayments() {
         </div>
       </div>
 
-      {/* ── 2. PAYMENT AMOUNT SUMMARY (TOTAL AMOUNT / PAID AMOUNT / REMAINING AMOUNT) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-xs text-text-muted uppercase font-black tracking-wider">Total Amount</p>
-          <p className="text-2xl font-black text-blue-700">₹{summaryStats.totalAmount.toLocaleString('en-IN')}</p>
-        </div>
-        <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-xs text-text-muted uppercase font-black tracking-wider">Paid Amount</p>
-          <p className="text-2xl font-black text-emerald-600">₹{summaryStats.paidAmount.toLocaleString('en-IN')}</p>
-        </div>
-        <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-xs text-text-muted uppercase font-black tracking-wider">Remaining Amount</p>
-          <p className="text-2xl font-black text-amber-600">₹{summaryStats.remainingAmount.toLocaleString('en-IN')}</p>
-        </div>
-      </div>
-
-      {/* ── STATUS FILTERS (SCOPED TO CURRENT MODULE) ── */}
-      <div className="space-y-4 bg-white p-5 rounded-[16px] border shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
-        <div>
-          <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">
-            Status Filter — {activeModuleLabel}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {STATUS_TABS.map((tab) => {
-              const isActive = statusFilter === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id)}
-                  className="px-4 py-2 rounded-xl text-xs font-extrabold transition-all border"
-                  style={{
-                    background: isActive ? 'var(--color-primary)' : 'var(--color-surface)',
-                    color: isActive ? '#ffffff' : 'var(--color-text-secondary)',
-                    borderColor: isActive ? 'var(--color-primary)' : 'var(--color-border)',
-                    boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.2)' : 'none',
-                  }}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ── SEARCH & SEARCH BY DATE & CLEAR FILTERS ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-          {/* Search payments... */}
-          <div className="sm:col-span-1">
-            <label className="field-label text-[11px]">Search Payments</label>
-            <input
-              type="text"
-              className="field text-xs py-2"
-              placeholder="Search payments…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {/* Search by Date */}
-          <div className="sm:col-span-1">
-            <label className="field-label text-[11px]">Search by Date 📅</label>
-            <input
-              type="date"
-              className="field text-xs py-2"
-              value={searchDate}
-              onChange={(e) => setSearchDate(e.target.value)}
-            />
-          </div>
-
-          {/* Clear Filters */}
-          <div className="sm:col-span-1 flex items-end">
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="w-full py-2 px-4 rounded-xl text-xs font-extrabold border transition-all text-slate-700 bg-slate-100 hover:bg-slate-200"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              Clear Filters
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 4. MAIN RECORDS TABLE ── */}
-      {loading ? (
-        <div className="card p-8 text-center text-xs text-text-muted">
-          Loading payment records…
-        </div>
-      ) : filteredRecords.length === 0 ? (
-        <div className="card p-10 text-center space-y-3 border-dashed border-2">
-          <p className="text-4xl">💳</p>
-          <p className="font-extrabold text-base text-slate-800">No Payment Records Found</p>
-          <p className="text-xs text-text-muted max-w-md mx-auto">
-            No payments match the selected status, search text, or date for <strong>{activeModuleLabel}</strong>.
-          </p>
-          {(statusFilter !== 'all' || searchQuery || searchDate) && (
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="btn-primary text-xs px-4 py-2 mt-2 font-bold inline-block"
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
-      ) : statusFilter === 'returned' ? (
-        <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white">
-          <table className="w-full text-left border-collapse whitespace-nowrap">
-            <thead>
-              <tr className="bg-slate-900 text-white border-b border-slate-700 uppercase tracking-widest text-[10px]">
-                <th className="p-3 font-bold text-left">Date & Time</th>
-                <th className="p-3 font-bold text-left">Vehicle / Driver</th>
-                <th className="p-3 font-bold text-left">Source Tank</th>
-                <th className="p-3 font-bold text-right">Ret. Quantity</th>
-                <th className="p-3 font-bold text-right">Ret. Packets</th>
-                <th className="p-3 font-bold text-left">Reason</th>
-                <th className="p-3 font-bold text-center">Status</th>
-                <th className="p-3 font-bold text-center">Return Bill</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.map((r, idx) => {
-                const badge = getStatusBadge(r.status);
-                const pd = r.packing_data || {};
-                
-                return (
-                  <tr
-                    key={r.id || idx}
-                    className="border-b last:border-0 hover:bg-slate-50 transition duration-150"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    <td className="p-3.5 text-xs text-slate-600 font-semibold">{formatDateDisplay(r.created_at)}</td>
-                    <td className="p-3.5 text-xs font-bold text-slate-800">{pd.vehicle_no || r.vehicle_no || r.driver_name || '—'}</td>
-                    <td className="p-3.5 text-xs font-bold text-slate-800">{r.resolved_tank_name !== null ? r.resolved_tank_name : (pd.tank_name || r.note || r.holder_name || '—')}</td>
-                    <td className="p-3.5 font-black text-blue-700 text-right whitespace-nowrap text-xs">
-                      {pd.quantity != null ? Number(pd.quantity).toLocaleString('en-IN') : '—'}
-                    </td>
-                    <td className="p-3.5 font-black text-slate-700 text-right whitespace-nowrap text-xs">
-                      {pd.packets != null ? pd.packets : '—'}
-                    </td>
-                    <td className="p-3.5 text-xs text-slate-600 truncate max-w-[200px]" title={pd.reason || '—'}>
-                      {pd.reason || '—'}
-                    </td>
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      <span
-                        className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-block"
-                        style={{
-                          background: badge.bg,
-                          color: badge.color,
-                          borderColor: badge.border,
-                        }}
-                      >
-                        {badge.label}
-                      </span>
-                    </td>
-                    <td className="p-3.5 font-bold text-center whitespace-nowrap">
-                      {r.bill_number && r.bill_number !== '—' ? (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}
-                          className="font-extrabold text-blue-600 hover:text-blue-800 underline transition cursor-pointer text-xs"
-                        >
-                          {r.bill_number}
-                        </button>
-                      ) : (
-                        <span className="text-text-muted font-bold">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {activeModule === 'seed_exchange' ? (
+        <SeedExchangePaymentsTab />
       ) : (
-        <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white" style={{ borderColor: 'var(--color-border)' }}>
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr style={{ background: 'var(--color-primary)', color: '#ffffff' }}>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Date &amp; Time</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Process</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Payment Type</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Party</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Requested Amount</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Total Amount</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Paid Amount</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Remaining Amount</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Method</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Status</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Bill</th>
-                <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Payment Bill</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRecords.map((r, idx) => {
-                const badge = getStatusBadge(r.status);
-                return (
-                  <tr
-                    key={r.id || idx}
-                    className="border-b hover:bg-slate-50 transition-colors"
-                    style={{ borderColor: 'var(--color-border)' }}
-                  >
-                    {/* Date & Time */}
-                    <td className="p-3.5 font-medium text-slate-700 whitespace-nowrap">
-                      {formatDateDisplay(r.created_at)}
-                    </td>
+        <>
+          {/* ── 2. PAYMENT AMOUNT SUMMARY (TOTAL AMOUNT / PAID AMOUNT / REMAINING AMOUNT) ── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+              <p className="text-xs text-text-muted uppercase font-black tracking-wider">Total Amount</p>
+              <p className="text-2xl font-black text-blue-700">₹{summaryStats.totalAmount.toLocaleString('en-IN')}</p>
+            </div>
+            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+              <p className="text-xs text-text-muted uppercase font-black tracking-wider">Paid Amount</p>
+              <p className="text-2xl font-black text-emerald-600">₹{summaryStats.paidAmount.toLocaleString('en-IN')}</p>
+            </div>
+            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+              <p className="text-xs text-text-muted uppercase font-black tracking-wider">Remaining Amount</p>
+              <p className="text-2xl font-black text-amber-600">₹{summaryStats.remainingAmount.toLocaleString('en-IN')}</p>
+            </div>
+          </div>
 
-                    {/* Process */}
-                    <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
-                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200">
-                        {r.process}
-                      </span>
-                    </td>
+          {/* ── STATUS FILTERS (SCOPED TO CURRENT MODULE) ── */}
+          <div className="space-y-4 bg-white p-5 rounded-[16px] border shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+            <div>
+              <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">
+                Status Filter — {activeModuleLabel}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {STATUS_TABS.map((tab) => {
+                  const isActive = statusFilter === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setStatusFilter(tab.id)}
+                      className="px-4 py-2 rounded-xl text-xs font-extrabold transition-all border"
+                      style={{
+                        background: isActive ? 'var(--color-primary)' : 'var(--color-surface)',
+                        color: isActive ? '#ffffff' : 'var(--color-text-secondary)',
+                        borderColor: isActive ? 'var(--color-primary)' : 'var(--color-border)',
+                        boxShadow: isActive ? '0 2px 8px rgba(37, 99, 235, 0.2)' : 'none',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                    {/* Payment Type */}
-                    <td className="p-3.5 font-semibold text-slate-700 whitespace-nowrap">
-                      {r.payment_type}
-                    </td>
+            {/* ── SEARCH & SEARCH BY DATE & CLEAR FILTERS ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
+              {/* Search payments... */}
+              <div className="sm:col-span-1">
+                <label className="field-label text-[11px]">Search Payments</label>
+                <input
+                  type="text"
+                  className="field text-xs py-2"
+                  placeholder="Search payments…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
 
-                    {/* Party */}
-                    <td className="p-3.5 font-extrabold text-slate-900">
-                      <div>
-                        <p className="text-xs font-black text-slate-900">{r.party}</p>
-                      </div>
-                    </td>
+              {/* Search by Date */}
+              <div className="sm:col-span-1">
+                <label className="field-label text-[11px]">Search by Date 📅</label>
+                <input
+                  type="date"
+                  className="field text-xs py-2"
+                  value={searchDate}
+                  onChange={(e) => setSearchDate(e.target.value)}
+                />
+              </div>
 
-                    {/* Requested Amount */}
-                    <td className="p-3.5 font-black text-indigo-700 text-right whitespace-nowrap text-xs">
-                      ₹{r.amount.toLocaleString('en-IN')}
-                    </td>
+              {/* Clear Filters */}
+              <div className="sm:col-span-1 flex items-end">
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="w-full py-2 px-4 rounded-xl text-xs font-extrabold border transition-all text-slate-700 bg-slate-100 hover:bg-slate-200"
+                  style={{ borderColor: 'var(--color-border)' }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+          </div>
 
-                    {/* Total Amount */}
-                    <td className="p-3.5 font-black text-blue-700 text-right whitespace-nowrap text-xs">
-                      ₹{r.total_order_amount.toLocaleString('en-IN')}
-                    </td>
-
-                    {/* Paid Amount */}
-                    <td className="p-3.5 font-black text-emerald-700 text-right whitespace-nowrap text-xs">
-                      ₹{r.paid_order_amount.toLocaleString('en-IN')}
-                    </td>
-
-                    {/* Remaining Amount */}
-                    <td className="p-3.5 font-black text-amber-700 text-right whitespace-nowrap text-xs">
-                      ₹{r.remaining_order_amount.toLocaleString('en-IN')}
-                    </td>
-
-                    {/* Method */}
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 font-extrabold text-[11px] border border-sky-200">
-                        {r.method}
-                      </span>
-                    </td>
-
-                    {/* Status */}
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      <span
-                        className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-block"
-                        style={{
-                          background: badge.bg,
-                          color: badge.color,
-                          borderColor: badge.border,
-                        }}
-                      >
-                        {badge.label}
-                      </span>
-                    </td>
-
-                    {/* Bill Column: Clickable Bill Number opens COMPLETE/TOTAL BILL */}
-                    <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
-                      {r.bill_number && r.bill_number !== '—' ? (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}
-                          className="font-extrabold text-blue-600 hover:text-blue-800 underline transition cursor-pointer text-xs"
-                        >
-                          {r.bill_number}
-                        </button>
-                      ) : (
-                        <span className="text-text-muted font-bold">—</span>
-                      )}
-                    </td>
-
-                    {/* Payment Bill Column: View Payment button opens PAYMENT BILL details */}
-                    <td className="p-3.5 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPaymentModal(r)}
-                        className="px-3 py-1 text-[11px] font-extrabold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition shadow-sm"
-                      >
-                        View Payment
-                      </button>
-                    </td>
+          {/* ── 4. MAIN RECORDS TABLE ── */}
+          {loading ? (
+            <div className="card p-8 text-center text-xs text-text-muted">
+              Loading payment records…
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="card p-10 text-center space-y-3 border-dashed border-2">
+              <p className="text-4xl">💳</p>
+              <p className="font-extrabold text-base text-slate-800">No Payment Records Found</p>
+              <p className="text-xs text-text-muted max-w-md mx-auto">
+                No payments match the selected status, search text, or date for <strong>{activeModuleLabel}</strong>.
+              </p>
+              {(statusFilter !== 'all' || searchQuery || searchDate) && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="btn-primary text-xs px-4 py-2 mt-2 font-bold inline-block"
+                >
+                  Reset Filters
+                </button>
+              )}
+            </div>
+          ) : statusFilter === 'returned' ? (
+            <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white">
+              <table className="w-full text-left border-collapse whitespace-nowrap">
+                <thead>
+                  <tr className="bg-slate-900 text-white border-b border-slate-700 uppercase tracking-widest text-[10px]">
+                    <th className="p-3 font-bold text-left">Date & Time</th>
+                    <th className="p-3 font-bold text-left">Process / Return Source</th>
+                    <th className="p-3 font-bold text-left">Bill Number</th>
+                    <th className="p-3 font-bold text-left">Hatchery</th>
+                    <th className="p-3 font-bold text-right">Original Bill Amt</th>
+                    <th className="p-3 font-bold text-right">Ret. Quantity</th>
+                    <th className="p-3 font-bold text-right">Rem. Quantity</th>
+                    <th className="p-3 font-bold text-right">Refund Amount</th>
+                    <th className="p-3 font-bold text-center">Return Type</th>
+                    <th className="p-3 font-bold text-left">Vehicle</th>
+                    <th className="p-3 font-bold text-left">Tank</th>
+                    <th className="p-3 font-bold text-center">Finance Status</th>
+                    <th className="p-3 font-bold text-center">View Details</th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((r, idx) => {
+                    const badge = getStatusBadge(r.raw_status || r.finance_status || r.status);
+
+                    return (
+                      <tr
+                        key={r.id || idx}
+                        className="border-b last:border-0 hover:bg-slate-50 transition duration-150"
+                        style={{ borderColor: 'var(--color-border)' }}
+                      >
+                        <td className="p-3.5 text-xs text-slate-600 font-semibold">{formatDateDisplay(r.created_at)}</td>
+                        <td className="p-3.5 text-xs font-bold text-slate-800">{r.process}</td>
+                        <td className="p-3.5 text-xs font-bold text-blue-600 cursor-pointer hover:underline" onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}>
+                          {r.bill_number !== '—' ? r.bill_number : (r.original_bill_number !== '—' ? r.original_bill_number : '—')}
+                        </td>
+                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.party}</td>
+                        <td className="p-3.5 text-xs font-bold text-slate-700 text-right">₹{r.total_order_amount?.toLocaleString('en-IN') || '—'}</td>
+                        <td className="p-3.5 font-black text-red-700 text-right text-xs">{r.returned_quantity != null ? Number(r.returned_quantity).toLocaleString('en-IN') : '—'}</td>
+                        <td className="p-3.5 font-bold text-slate-600 text-right text-xs">{r.remaining_quantity != null ? Number(r.remaining_quantity).toLocaleString('en-IN') : '—'}</td>
+                        <td className="p-3.5 font-black text-emerald-700 text-right text-xs">₹{r.amount?.toLocaleString('en-IN') || '—'}</td>
+                        <td className="p-3.5 text-xs font-bold text-slate-600 text-center">{r.return_type || '—'}</td>
+                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.vehicle_no || '—'}</td>
+                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.resolved_tank_name || '—'}</td>
+                        <td className="p-3.5 text-center">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-block" style={{ background: badge.bg, color: badge.color, borderColor: badge.border }}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td className="p-3.5 font-bold text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}
+                            className="font-extrabold text-blue-600 hover:text-blue-800 underline transition cursor-pointer text-xs"
+                          >
+                            View Details
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white" style={{ borderColor: 'var(--color-border)' }}>
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr style={{ background: 'var(--color-primary)', color: '#ffffff' }}>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Date &amp; Time</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Process</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Payment Type</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Party</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Requested Amount</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Total Amount</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Paid Amount</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-right text-white">Remaining Amount</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Method</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Status</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-white">Bill</th>
+                    <th className="p-3.5 font-extrabold whitespace-nowrap text-center text-white">Payment Bill</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((r, idx) => {
+                    const badge = getStatusBadge(r.status);
+                    return (
+                      <tr
+                        key={r.id || idx}
+                        className="border-b hover:bg-slate-50 transition-colors"
+                        style={{ borderColor: 'var(--color-border)' }}
+                      >
+                        {/* Date & Time */}
+                        <td className="p-3.5 font-medium text-slate-700 whitespace-nowrap">
+                          {formatDateDisplay(r.created_at)}
+                        </td>
+
+                        {/* Process */}
+                        <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-extrabold border border-slate-200">
+                            {r.process}
+                          </span>
+                        </td>
+
+                        {/* Payment Type */}
+                        <td className="p-3.5 font-semibold text-slate-700 whitespace-nowrap">
+                          {r.payment_type}
+                        </td>
+
+                        {/* Party */}
+                        <td className="p-3.5 font-extrabold text-slate-900">
+                          <div>
+                            <p className="text-xs font-black text-slate-900">{r.party}</p>
+                          </div>
+                        </td>
+
+                        {/* Requested Amount */}
+                        <td className="p-3.5 font-black text-indigo-700 text-right whitespace-nowrap text-xs">
+                          ₹{r.amount.toLocaleString('en-IN')}
+                        </td>
+
+                        {/* Total Amount */}
+                        <td className="p-3.5 font-black text-blue-700 text-right whitespace-nowrap text-xs">
+                          ₹{r.total_order_amount.toLocaleString('en-IN')}
+                        </td>
+
+                        {/* Paid Amount */}
+                        <td className="p-3.5 font-black text-emerald-700 text-right whitespace-nowrap text-xs">
+                          ₹{r.paid_order_amount.toLocaleString('en-IN')}
+                        </td>
+
+                        {/* Remaining Amount */}
+                        <td className="p-3.5 font-black text-amber-700 text-right whitespace-nowrap text-xs">
+                          ₹{r.remaining_order_amount.toLocaleString('en-IN')}
+                        </td>
+
+                        {/* Method */}
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <span className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-800 font-extrabold text-[11px] border border-sky-200">
+                            {r.method}
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <span
+                            className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-block"
+                            style={{
+                              background: badge.bg,
+                              color: badge.color,
+                              borderColor: badge.border,
+                            }}
+                          >
+                            {badge.label}
+                          </span>
+                        </td>
+
+                        {/* Bill Column: Clickable Bill Number opens COMPLETE/TOTAL BILL */}
+                        <td className="p-3.5 font-bold text-slate-800 whitespace-nowrap">
+                          {r.bill_number && r.bill_number !== '—' ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}
+                              className="font-extrabold text-blue-600 hover:text-blue-800 underline transition cursor-pointer text-xs"
+                            >
+                              {r.bill_number}
+                            </button>
+                          ) : (
+                            <span className="text-text-muted font-bold">—</span>
+                          )}
+                        </td>
+
+                        {/* Payment Bill Column: View Payment button opens PAYMENT BILL details */}
+                        <td className="p-3.5 text-center whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPaymentModal(r)}
+                            className="px-3 py-1 text-[11px] font-extrabold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition shadow-sm"
+                          >
+                            View Payment
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
 
       {/* ── VIEW PAYMENT DETAILS MODAL ── */}

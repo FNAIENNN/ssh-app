@@ -570,11 +570,25 @@ export function buildDemoData() {
     }
   );
 
+  const hatcheries = [
+    { id: 'h-1', hatchery_name: 'Sri Venkateswara Hatcheries', location: 'Kakinada', holder_name: 'S. Venkateswara Rao' },
+    { id: 'h-2', hatchery_name: 'Aqua Blue Hatcheries', location: 'Bapatla', holder_name: 'K. Rama Krishna' },
+    { id: 'h-3', hatchery_name: 'Coastal Seed Co.', location: 'Nellore', holder_name: 'M. Subba Rao' },
+    { id: 'h-4', hatchery_name: 'Bhimavaram Hatchery', location: 'Bhimavaram', holder_name: 'P. Satyanarayana' },
+  ];
+
+  const hatchery_bank_accounts = [
+    { id: 'hba-1', hatchery_id: 'h-1', bank_name: 'State Bank of India', account_number: '30129845123', ifsc_code: 'SBIN0001234', holder_name: 'S. Venkateswara Rao' },
+    { id: 'hba-2', hatchery_id: 'h-1', bank_name: 'HDFC Bank', account_number: '5010023456789', ifsc_code: 'HDFC0000456', holder_name: 'Sri Venkateswara Hatcheries' },
+    { id: 'hba-3', hatchery_id: 'h-2', bank_name: 'ICICI Bank', account_number: '001105001234', ifsc_code: 'ICIC0000011', holder_name: 'K. Rama Krishna' },
+  ];
+
   return {
     sites, sections, tanks, seed_entries, seed_exchanges, payments, bills,
     payment_accounts, bank_accounts, vehicle_bookings,
     trail_netting_checklists, trail_netting_records, trail_netting_reports,
     food_orders, notifications, profiles, graders, labour_suppliers, harvest_entries,
+    hatcheries, hatchery_bank_accounts,
   };
 }
 

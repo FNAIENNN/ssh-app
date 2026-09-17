@@ -289,15 +289,101 @@ export default function SeedVanPlanStep1({
 
   // ── Export ────────────────────────────────────────────────────────────────
 
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  const applyCloneValues = (clonedDoc) => {
+    try {
+      if (!vanPlanRef.current) return;
+      const clonedContainer = clonedDoc.getElementById('van-plan-export-container') || clonedDoc.querySelector('[ref="vanPlanRef"]');
+      if (!clonedContainer) return;
+
+      // Hide interactive action buttons in the cloned export view
+      const actionButtons = clonedContainer.querySelectorAll('button');
+      actionButtons.forEach((btn) => {
+        btn.style.display = 'none';
+      });
+
+      // Map original form controls (select, input) to cloned form controls inside container
+      const origControls = vanPlanRef.current.querySelectorAll('input, select, textarea');
+      const cloneControls = clonedContainer.querySelectorAll('input, select, textarea');
+
+      origControls.forEach((orig, i) => {
+        const clone = cloneControls[i];
+        if (!clone) return;
+
+        if (orig.tagName === 'SELECT') {
+          const selectedOpt = orig.options[orig.selectedIndex];
+          const text = selectedOpt ? selectedOpt.text : (orig.value || '');
+
+          const replacementDiv = clonedDoc.createElement('div');
+          replacementDiv.className = clone.className || 'field py-1.5 text-xs font-bold uppercase';
+          replacementDiv.style.cssText = clone.style.cssText;
+          replacementDiv.style.display = 'flex';
+          replacementDiv.style.alignItems = 'center';
+          replacementDiv.style.fontWeight = '700';
+          replacementDiv.style.color = '#0f172a';
+          replacementDiv.style.background = '#ffffff';
+          replacementDiv.style.padding = '6px 10px';
+          replacementDiv.style.border = '1px solid #cbd5e1';
+          replacementDiv.style.borderRadius = '6px';
+          replacementDiv.style.minHeight = '32px';
+          replacementDiv.textContent = text || '— Select Tank —';
+
+          if (clone.parentNode) {
+            clone.parentNode.replaceChild(replacementDiv, clone);
+          }
+        } else if (orig.tagName === 'INPUT') {
+          const val = orig.value || '';
+
+          const replacementDiv = clonedDoc.createElement('div');
+          replacementDiv.className = clone.className || 'field py-1.5 text-xs font-semibold';
+          replacementDiv.style.cssText = clone.style.cssText;
+          replacementDiv.style.display = 'flex';
+          replacementDiv.style.alignItems = 'center';
+          replacementDiv.style.fontWeight = '700';
+          replacementDiv.style.color = '#0f172a';
+          replacementDiv.style.background = orig.disabled ? '#f8fafc' : '#ffffff';
+          replacementDiv.style.padding = '6px 10px';
+          replacementDiv.style.border = '1px solid #cbd5e1';
+          replacementDiv.style.borderRadius = '6px';
+          replacementDiv.style.minHeight = '32px';
+          replacementDiv.textContent = val ? (isNaN(Number(val)) ? val : `${Number(val).toLocaleString('en-IN')} pcs`) : (orig.placeholder || '');
+
+          if (clone.parentNode) {
+            clone.parentNode.replaceChild(replacementDiv, clone);
+          }
+        }
+      });
+    } catch (err) {
+      console.error('Error during clone DOM transformation:', err);
+    }
+  };
+
   async function handleDownloadImage() {
     if (!vanPlanRef.current) return;
     setExporting(true);
     try {
-      const canvas = await html2canvas(vanPlanRef.current, { scale: 2, backgroundColor: '#ffffff' });
+      const canvas = await html2canvas(vanPlanRef.current, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        onclone: applyCloneValues
+      });
+      const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.download = `Seed_Van_Plan_${new Date().toISOString().slice(0, 10)}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = dataUrl;
+      document.body.appendChild(link);
       link.click();
+      setTimeout(() => {
+        if (link.parentNode) {
+          link.parentNode.removeChild(link);
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Failed to download image:', err);
+      alert('Failed to generate image. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -307,7 +393,13 @@ export default function SeedVanPlanStep1({
     if (!vanPlanRef.current) return;
     setExporting(true);
     try {
-      const canvas = await html2canvas(vanPlanRef.current, { scale: 2, backgroundColor: '#ffffff' });
+      const canvas = await html2canvas(vanPlanRef.current, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        onclone: applyCloneValues
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const imgWidth = 190;
@@ -318,6 +410,9 @@ export default function SeedVanPlanStep1({
       pdf.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 15, 22);
       pdf.addImage(imgData, 'PNG', 10, 28, imgWidth, imgHeight);
       pdf.save(`Seed_Van_Plan_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('Failed to download PDF:', err);
+      alert('Failed to generate PDF. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -325,98 +420,144 @@ export default function SeedVanPlanStep1({
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
-    const handleReturnSubmit = (tankName, qty, packets, maxQty, reason, photo, video) => {
-      const q = Number(qty);
-      const tankObj = allTanks.find(t => t.name === tankName);
-      const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
+  const uploadMedia = async (dataUrl, prefix) => {
+    if (!dataUrl) return null;
+    if (typeof dataUrl === 'string' && !dataUrl.startsWith('data:')) return dataUrl;
+    const isVideo = typeof dataUrl === 'string' && dataUrl.startsWith('data:video');
+    const ext = isVideo ? 'webm' : 'jpg';
+    const contentType = isVideo ? 'video/webm' : 'image/jpeg';
 
-      setTankMods(prev => {
-        const existing = prev[tankName] || {};
-        const newReturns = [...(existing.returns || []), { quantity: q, packets: packets ? Number(packets) : null, reason, photo, video }];
-        const newReturnedQty = (existing.returnedQuantity || 0) + q;
-        const totalTransferred = (existing.transferredQuantity || 0);
-        
-        const remaining = originalQty - newReturnedQty - totalTransferred;
-        const isComplete = remaining <= 0;
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
 
-        return {
-          ...prev,
-          [tankName]: {
-            ...existing,
-            returns: newReturns,
-            returnedQuantity: newReturnedQty,
-            status: isComplete ? 'Returned' : (existing.status || '')
-          }
-        };
-      });
-      setActiveModal(null);
-    };
-
-    const handleFileUpload = (e, setFileState) => {
-      const file = e.target.files[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFileState(reader.result);
-        };
-        reader.readAsDataURL(file);
+      const fileName = `${prefix}-${Date.now()}.${ext}`;
+      const { data, error } = await supabase.storage.from('media').upload(fileName, blob, { contentType });
+      if (error) {
+        console.warn('Storage media upload failed, fallback to dataUrl:', error.message || error);
+        return dataUrl;
       }
-    };
+      return data?.path || fileName;
+    } catch (err) {
+      console.warn('uploadMedia failed, fallback to dataUrl:', err.message || err);
+      return dataUrl;
+    }
+  };
 
-    const handleTransferSubmit = (tankName, targetTank, qty, packets, maxQty, photo, video) => {
-      const q = Number(qty);
-      const cleanTarget = targetTank.trim().toUpperCase();
-      
-      const tankObj = allTanks.find(t => t.name === tankName);
-      const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
+  const handleReturnSubmit = async (tankName, qty, packets, maxQty, reason, photo, video) => {
+    let photoPath = null;
+    let videoPath = null;
 
-      setExtraTanks(prev => {
-         if (!prev.some(t => t.name === cleanTarget) && !availableTanks.some(t => t.name === cleanTarget)) {
-           return [...prev, { id: `t-new-${Date.now()}`, name: cleanTarget, initialQty: 0 }];
-         }
-         return prev;
-      });
-      
-      setTankMods(prev => {
-        const existing = prev[tankName] || {};
-        const newTransfers = [...(existing.transfers || []), { target: cleanTarget, quantity: q, packets: packets ? Number(packets) : null, photo, video }];
-        const newTransferredQty = (existing.transferredQuantity || 0) + q;
-        const totalReturned = (existing.returnedQuantity || 0);
-        
-        const remaining = originalQty - totalReturned - newTransferredQty;
-        const isComplete = remaining <= 0;
+    if (photo) photoPath = await uploadMedia(photo, `return-photo-${tankName}`);
+    if (video) videoPath = await uploadMedia(video, `return-video-${tankName}`);
 
-        const existingTarget = prev[cleanTarget] || {};
-        const newReceived = (existingTarget.receivedQuantity || 0) + q;
+    const q = Number(qty);
+    const tankObj = allTanks.find(t => t.name === tankName);
+    const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
 
-        return {
-          ...prev,
-          [tankName]: {
-            ...existing,
-            transfers: newTransfers,
-            transferredQuantity: newTransferredQty,
-            status: isComplete ? 'Transferred' : (existing.status || '')
-          },
-          [cleanTarget]: {
-            ...existingTarget,
-            receivedQuantity: newReceived
-          }
-        };
-      });
-      setActiveModal(null);
-    };
+    setTankMods(prev => {
+      const existing = prev[tankName] || {};
+      const newReturns = [...(existing.returns || []), { quantity: q, packets: packets ? Number(packets) : null, reason, photo: photoPath, video: videoPath }];
+      const newReturnedQty = (existing.returnedQuantity || 0) + q;
+      const totalTransferred = (existing.transferredQuantity || 0);
 
-    function handleNext() {
-      if (!isValid) return;
-      const completedDrums = drums.filter((d) => d.tankName && Number(d.count) > 0);
-      onNext({
-        drums: completedDrums.map((d) => ({ drumNum: d.drumNum, tankName: d.tankName, count: Number(d.count) })),
-        grandTotal,
-        extraTanks,
-        availableTanks: allTanks,
-        tankMods,
+      const effRem = Math.max(0, originalQty - newReturnedQty - totalTransferred);
+      let nextStatus = 'Pending';
+      if (effRem === 0) {
+        nextStatus = totalTransferred > 0 && newReturnedQty === 0 ? 'Transferred' : 'Returned';
+      }
+
+      return {
+        ...prev,
+        [tankName]: {
+          ...existing,
+          returns: newReturns,
+          returnedQuantity: newReturnedQty,
+          effectiveRemaining: effRem,
+          status: nextStatus
+        }
+      };
+    });
+
+    setActiveModal(null);
+    if (onPlanUpdated) {
+      onPlanUpdated({
+        tankMods: { ...tankMods, [tankName]: { ...(tankMods[tankName] || {}), returnedQuantity: ((tankMods[tankName]?.returnedQuantity || 0) + q) } }
       });
     }
+  };
+
+  const handleFileUpload = (e, setFileState) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFileState(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleTransferSubmit = async (tankName, targetTank, qty, packets, maxQty, photo, video) => {
+    let photoPath = null;
+    let videoPath = null;
+
+    if (photo) photoPath = await uploadMedia(photo, `transfer-photo-${tankName}`);
+    if (video) videoPath = await uploadMedia(video, `transfer-video-${tankName}`);
+
+    const q = Number(qty);
+    const cleanTarget = targetTank.trim().toUpperCase();
+
+    const tankObj = allTanks.find(t => t.name === tankName);
+    const originalQty = tankObj ? Number(tankObj.initialQty) : maxQty;
+
+    setExtraTanks(prev => {
+      if (!prev.some(t => t.name === cleanTarget) && !availableTanks.some(t => t.name === cleanTarget)) {
+        return [...prev, { id: `t-new-${Date.now()}`, name: cleanTarget, initialQty: 0 }];
+      }
+      return prev;
+    });
+
+    setTankMods(prev => {
+      const existing = prev[tankName] || {};
+      const newTransfers = [...(existing.transfers || []), { target: cleanTarget, quantity: q, packets: packets ? Number(packets) : null, photo: photoPath, video: videoPath }];
+      const newTransferredQty = (existing.transferredQuantity || 0) + q;
+      const totalReturned = (existing.returnedQuantity || 0);
+
+      const remaining = originalQty - totalReturned - newTransferredQty;
+      const isComplete = remaining <= 0;
+
+      const existingTarget = prev[cleanTarget] || {};
+      const newReceived = (existingTarget.receivedQuantity || 0) + q;
+
+      return {
+        ...prev,
+        [tankName]: {
+          ...existing,
+          transfers: newTransfers,
+          transferredQuantity: newTransferredQty,
+          status: isComplete ? 'Transferred' : (existing.status || '')
+        },
+        [cleanTarget]: {
+          ...existingTarget,
+          receivedQuantity: newReceived
+        }
+      };
+    });
+    setActiveModal(null);
+  };
+
+  function handleNext() {
+    if (!isValid) return;
+    const completedDrums = drums.filter((d) => d.tankName && Number(d.count) > 0);
+    onNext({
+      drums: completedDrums.map((d) => ({ drumNum: d.drumNum, tankName: d.tankName, count: Number(d.count) })),
+      grandTotal,
+      extraTanks,
+      availableTanks: allTanks,
+      tankMods,
+    });
+  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -550,12 +691,12 @@ export default function SeedVanPlanStep1({
               const groupTanks = allTanks.filter(t => {
                 const baseRem = tankRemainingMap[t.name] ?? t.initialQty;
                 const effRem = baseRem - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
-                
+
                 const origRemaining = (t.initialQty || 0) - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
 
                 // A tank is ONLY RETURNED if its original remaining quantity is exhausted AND it has a return
                 const isFullyReturned = ((t.returnedQuantity || 0) > 0) && (origRemaining <= 0);
-                
+
                 // A tank is ONLY TRANSFERRED if its original remaining quantity is exhausted AND it has a transfer (and not already returned)
                 const isFullyTransferred = ((t.transferredQuantity || 0) > 0) && (origRemaining <= 0) && !isFullyReturned;
 
@@ -586,15 +727,15 @@ export default function SeedVanPlanStep1({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {groupName === 'TRANSFERRED' && allTransfers.map((tr, idx) => (
                       <div key={`tr-${idx}`} className="p-3 rounded-[8px] bg-blue-50 border border-blue-300 shadow-sm">
-                         <div className="flex justify-between items-center mb-2 border-b border-blue-200 pb-2">
-                           <span className="font-extrabold text-slate-800 text-sm">Transfer Record</span>
-                         </div>
-                         <div className="text-xs text-slate-600 space-y-1">
-                           <p>Source Tank: <span className="font-extrabold text-slate-800">{tr.source}</span></p>
-                           <p>Target Tank: <span className="font-extrabold text-slate-800">{tr.target}</span></p>
-                           <p>Transferred Quantity: <span className="font-extrabold text-blue-700">{Number(tr.quantity).toLocaleString('en-IN')} pcs</span></p>
-                           {tr.packets != null && <p>Transferred Packets: <span className="font-extrabold text-blue-700">{tr.packets}</span></p>}
-                         </div>
+                        <div className="flex justify-between items-center mb-2 border-b border-blue-200 pb-2">
+                          <span className="font-extrabold text-slate-800 text-sm">Transfer Record</span>
+                        </div>
+                        <div className="text-xs text-slate-600 space-y-1">
+                          <p>Source Tank: <span className="font-extrabold text-slate-800">{tr.source}</span></p>
+                          <p>Target Tank: <span className="font-extrabold text-slate-800">{tr.target}</span></p>
+                          <p>Transferred Quantity: <span className="font-extrabold text-blue-700">{Number(tr.quantity).toLocaleString('en-IN')} pcs</span></p>
+                          {tr.packets != null && <p>Transferred Packets: <span className="font-extrabold text-blue-700">{tr.packets}</span></p>}
+                        </div>
                       </div>
                     ))}
 
@@ -602,10 +743,10 @@ export default function SeedVanPlanStep1({
                       const baseRem = tankRemainingMap[t.name] ?? t.initialQty;
                       const effRem = baseRem - (t.returnedQuantity || 0) - (t.transferredQuantity || 0);
                       const packets = t.numberOfPackets;
-                      
+
                       const isReturned = groupName === 'RETURNED';
                       const isTransferred = groupName === 'TRANSFERRED';
-                      
+
                       const isPartialReturn = !isReturned && (t.returnedQuantity || 0) > 0;
                       const isPartialTransfer = !isTransferred && (t.transferredQuantity || 0) > 0;
 
@@ -617,29 +758,29 @@ export default function SeedVanPlanStep1({
                       return (
                         <div key={t.id} className={`p-3 rounded-[8px] border shadow-sm ${boxClass}`}>
                           <div className={`flex justify-between items-center mb-2 border-b pb-2 ${headBorder}`}>
-                             <span className="font-extrabold text-slate-800 text-sm">{t.name}</span>
-                             <div className="flex gap-1 items-center">
-                               {isReturned && (
-                                 <span className="text-[10px] font-black uppercase text-red-600 bg-red-100 px-2 py-0.5 rounded border border-red-200">
-                                   Returned
-                                 </span>
-                               )}
-                               {isPartialReturn && (
-                                 <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                   Partial Return
-                                 </span>
-                               )}
-                               {isTransferred && (
-                                 <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
-                                   Transferred
-                                 </span>
-                               )}
-                               {isPartialTransfer && (
-                                 <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                   Partial Transfer
-                                 </span>
-                               )}
-                             </div>
+                            <span className="font-extrabold text-slate-800 text-sm">{t.name}</span>
+                            <div className="flex gap-1 items-center">
+                              {isReturned && (
+                                <span className="text-[10px] font-black uppercase text-red-600 bg-red-100 px-2 py-0.5 rounded border border-red-200">
+                                  Returned
+                                </span>
+                              )}
+                              {isPartialReturn && (
+                                <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                  Partial Return
+                                </span>
+                              )}
+                              {isTransferred && (
+                                <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                                  Transferred
+                                </span>
+                              )}
+                              {isPartialTransfer && (
+                                <span className="text-[10px] font-black uppercase text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                  Partial Transfer
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {groupName === 'PENDING' && (
@@ -659,15 +800,6 @@ export default function SeedVanPlanStep1({
                                 <p>Quantity: <span className="font-extrabold text-slate-800">{effRem.toLocaleString('en-IN')} pcs</span></p>
                               )}
                               {packets != null && <p>Packets: <span className="font-extrabold text-slate-800">{packets}</span></p>}
-                              
-                              <div className="flex gap-2 mt-3 pt-2 border-t border-slate-100">
-                                <button onClick={() => { setActiveModal({ type: 'return', tankName: t.name, maxQty: effRem }); setModalQty(''); setModalPackets(''); setModalReason(''); setModalPhoto(null); setModalVideo(null); setIsCapturingPhoto(false); setIsCapturingVideo(false); }} className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition">
-                                   Return
-                                </button>
-                                <button onClick={() => { setActiveModal({ type: 'transfer', tankName: t.name, maxQty: effRem }); setModalQty(''); setModalPackets(''); setModalTargetTank(''); setModalPhoto(null); setModalVideo(null); setIsCapturingPhoto(false); setIsCapturingVideo(false); }} className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 transition">
-                                   Transfer
-                                </button>
-                              </div>
                             </div>
                           )}
 
@@ -705,9 +837,9 @@ export default function SeedVanPlanStep1({
       )}
 
       {/* Exportable drum list */}
-      {/* Exportable drum list */}
       <div
         ref={vanPlanRef}
+        id="van-plan-export-container"
         className="p-4 rounded-[16px] border space-y-4 bg-white"
         style={{ borderColor: 'var(--color-border)' }}
       >
@@ -720,7 +852,7 @@ export default function SeedVanPlanStep1({
                 Seed Van Layout Plan
               </h4>
               <p className="text-[11px] text-text-muted">
-                Drums organized by Left Side & Right Side
+                Drums organized by Left Side &amp; Right Side
               </p>
             </div>
           </div>
@@ -733,7 +865,7 @@ export default function SeedVanPlanStep1({
               <span className="font-extrabold text-xl text-primary tracking-widest uppercase">Cabin</span>
             </div>
           </div>
-          
+
           <div className="flex justify-between px-20">
             <div className="flex flex-col items-center">
               <span className="font-bold text-sm text-primary tracking-widest uppercase">Left</span>
@@ -925,23 +1057,23 @@ export default function SeedVanPlanStep1({
           <span>+</span>
           <span>Add Another Drum</span>
         </button>
-      </div>
 
-      {/* Grand Total */}
-      <div
-        className="p-5 rounded-[16px] flex items-center justify-between shadow-md"
-        style={{ background: 'linear-gradient(135deg, var(--color-success) 0%, #16a34a 100%)' }}
-      >
-        <div>
-          <p className="text-xs uppercase tracking-wider font-semibold text-white/80">
-            Grand Total Seed Count
-          </p>
-          <p className="text-3xl font-black text-white">{grandTotal.toLocaleString('en-IN')}</p>
-          <p className="text-xs text-white/70 mt-0.5">
-            {completedCount} drum{completedCount !== 1 ? 's' : ''} allocated
-          </p>
+        {/* Grand Total */}
+        <div
+          className="p-5 rounded-[16px] flex items-center justify-between shadow-md mt-4"
+          style={{ background: 'linear-gradient(135deg, var(--color-success) 0%, #16a34a 100%)' }}
+        >
+          <div>
+            <p className="text-xs uppercase tracking-wider font-semibold text-white/80">
+              Grand Total Seed Count
+            </p>
+            <p className="text-3xl font-black text-white">{grandTotal.toLocaleString('en-IN')}</p>
+            <p className="text-xs text-white/70 mt-0.5">
+              {completedCount} drum{completedCount !== 1 ? 's' : ''} allocated
+            </p>
+          </div>
+          <div className="text-white text-3xl">🧮</div>
         </div>
-        <div className="text-white text-3xl">🧮</div>
       </div>
 
       {/* Export section */}
@@ -966,7 +1098,7 @@ export default function SeedVanPlanStep1({
               type="button"
               onClick={handleDownloadImage}
               disabled={exporting}
-              className="btn-ghost text-xs font-bold px-3.5 py-2 border rounded-[8px] bg-white flex items-center gap-1"
+              className="btn-ghost text-xs font-bold px-3.5 py-2 border rounded-[8px] bg-white flex items-center gap-1 relative z-10 pointer-events-auto cursor-pointer"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             >
               <span>🖼️</span> Image (PNG)
@@ -1011,24 +1143,24 @@ export default function SeedVanPlanStep1({
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
             <h3 className="text-lg font-black text-red-700 uppercase tracking-wide border-b pb-2">Return Seed</h3>
-            
+
             <div className="space-y-3">
               <div>
                 <p className="text-[11px] uppercase font-bold text-slate-500">Tank</p>
                 <p className="text-sm font-extrabold text-slate-900">{activeModal.tankName}</p>
               </div>
-              
+
               <div>
                 <p className="text-[11px] uppercase font-bold text-slate-500">Available Quantity</p>
                 <p className="text-sm font-extrabold text-emerald-700">{activeModal.maxQty.toLocaleString('en-IN')} pcs</p>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="field-label text-[11px]">Return Qty *</label>
-                  <input 
-                    type="number" 
-                    className="field text-xs font-bold" 
+                  <input
+                    type="number"
+                    className="field text-xs font-bold"
                     value={modalQty}
                     onChange={e => setModalQty(e.target.value)}
                     max={activeModal.maxQty}
@@ -1036,20 +1168,20 @@ export default function SeedVanPlanStep1({
                 </div>
                 <div>
                   <label className="field-label text-[11px]">Return Packets</label>
-                  <input 
-                    type="number" 
-                    className="field text-xs font-bold" 
+                  <input
+                    type="number"
+                    className="field text-xs font-bold"
                     value={modalPackets}
                     onChange={e => setModalPackets(e.target.value)}
                   />
                 </div>
               </div>
-              
+
               <div>
                 <label className="field-label text-[11px]">Reason for Return</label>
-                <input 
-                  type="text" 
-                  className="field text-xs" 
+                <input
+                  type="text"
+                  className="field text-xs"
                   value={modalReason}
                   onChange={e => setModalReason(e.target.value)}
                   placeholder="Optional reason..."
@@ -1126,10 +1258,10 @@ export default function SeedVanPlanStep1({
                 </div>
               )}
             </div>
-            
+
             <div className="flex items-center gap-3 pt-3 border-t">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => {
                   if (!modalQty || Number(modalQty) <= 0 || Number(modalQty) > activeModal.maxQty) {
                     alert('Invalid return quantity. Must be greater than 0 and less than or equal to available quantity.');
@@ -1141,8 +1273,8 @@ export default function SeedVanPlanStep1({
               >
                 Confirm Return
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setActiveModal(null)}
                 className="btn-ghost text-xs px-4 py-2 font-bold"
               >
@@ -1158,7 +1290,7 @@ export default function SeedVanPlanStep1({
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 space-y-4">
             <h3 className="text-lg font-black text-blue-700 uppercase tracking-wide border-b pb-2">Transfer Seed</h3>
-            
+
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1170,24 +1302,24 @@ export default function SeedVanPlanStep1({
                   <p className="text-sm font-extrabold text-emerald-700">{activeModal.maxQty.toLocaleString('en-IN')} pcs</p>
                 </div>
               </div>
-              
+
               <div>
                 <label className="field-label text-[11px]">Target Tank *</label>
-                <input 
-                  type="text" 
-                  className="field text-xs font-bold uppercase" 
+                <input
+                  type="text"
+                  className="field text-xs font-bold uppercase"
                   value={modalTargetTank}
                   onChange={e => setModalTargetTank(e.target.value)}
                   placeholder="e.g. C2"
                 />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="field-label text-[11px]">Transfer Qty *</label>
-                  <input 
-                    type="number" 
-                    className="field text-xs font-bold" 
+                  <input
+                    type="number"
+                    className="field text-xs font-bold"
                     value={modalQty}
                     onChange={e => setModalQty(e.target.value)}
                     max={activeModal.maxQty}
@@ -1195,9 +1327,9 @@ export default function SeedVanPlanStep1({
                 </div>
                 <div>
                   <label className="field-label text-[11px]">Transfer Packets</label>
-                  <input 
-                    type="number" 
-                    className="field text-xs font-bold" 
+                  <input
+                    type="number"
+                    className="field text-xs font-bold"
                     value={modalPackets}
                     onChange={e => setModalPackets(e.target.value)}
                   />
@@ -1274,10 +1406,10 @@ export default function SeedVanPlanStep1({
                 </div>
               )}
             </div>
-            
+
             <div className="flex items-center gap-3 pt-3 border-t">
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => {
                   if (!modalTargetTank.trim()) {
                     alert('Target tank is required');
@@ -1297,8 +1429,8 @@ export default function SeedVanPlanStep1({
               >
                 Confirm Transfer
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setActiveModal(null)}
                 className="btn-ghost text-xs px-4 py-2 font-bold"
               >

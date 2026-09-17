@@ -19,6 +19,7 @@ import jsPDF from 'jspdf';
 import ActivityTimeline from '../../../components/ui/ActivityTimeline';
 import { aggregateTankStates } from './seedStocking/stockingUtils';
 import { supabase, TABLES } from '../../../lib/supabaseClient';
+import { useToast } from '../../../hooks/useToast';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -302,14 +303,19 @@ export default function BillDetailsReadOnly({
   vehiclePayments = [],
   onBack,
   showExport = true,
+  companyBankAccounts = [],
 }) {
   const detailRef = useRef(null);
+  const toast = useToast();
   const [exporting, setExporting] = useState(false);
   const [origOrder, setOrigOrder] = useState(null);
   const [origPayments, setOrigPayments] = useState([]);
   const [siteName, setSiteName] = useState('—');
   const [returnVehicle, setReturnVehicle] = useState(null);
   const [returnBills, setReturnBills] = useState([]);
+
+  const [financeStatus, setFinanceStatus] = useState(bill?.finance_status || 'pending');
+  const [refundBankAccount, setRefundBankAccount] = useState(bill?.refund_bank_account_id || '');
 
   useEffect(() => {
     if (bill?.type === 'return') {
@@ -356,12 +362,15 @@ export default function BillDetailsReadOnly({
           .from(TABLES.bills)
           .select('*')
           .eq('site_id', bill.site_id)
-          .in('type', ['return', 'return_bill']);
+          .or('type.in.(return,return_bill),report_type.eq.return_bill');
         if (rBills) {
-          const myReturns = rBills.filter(r => 
-             r.packing_data?.order_id === bill.id || 
-             r.original_bill_id === bill.id
-          );
+          const myReturns = rBills.filter(r => {
+            const rDoc = r.document_data || {};
+            const rPd = r.packing_data || rDoc.packing_data || {};
+            return rPd.order_id === bill.id ||
+              r.original_bill_id === bill.id ||
+              rDoc.original_bill_id === bill.id;
+          });
           setReturnBills(myReturns);
         }
       };
@@ -551,6 +560,169 @@ export default function BillDetailsReadOnly({
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const isReturn = bill.type === 'return' || bill.type === 'return_bill' || bill.report_type === 'return_bill';
+
+  const handleSendToFinance = async () => {
+    if (!refundBankAccount) {
+      toast.error('Please select our bank account for the refund.');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from(TABLES.bills)
+        .update({
+          finance_status: 'returned',
+          refund_bank_account_id: refundBankAccount
+        })
+        .eq('id', bill.id);
+
+      if (error) throw error;
+      setFinanceStatus('returned');
+      toast.success('Return bill processed successfully.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to process refund: ' + err.message);
+    }
+  };
+
+  if (isReturn) {
+    const docData = bill.document_data || {};
+    const pd = bill.packing_data || docData.packing_data || {};
+    const isStocking = bill.type === 'return_bill' || docData.return_source?.includes('Seed Van') || (!pd.tank_id && (bill.drum_name || docData.drum_name));
+    const returnedQty = Number(bill.seed_count_returned || docData.seed_count_returned || docData.returned_qty || pd.quantity || pd.returned_qty || 0);
+    const perPiecePrice = Number(origOrder?.per_piece_price || 0);
+    const refundAmount = returnedQty * perPiecePrice;
+    const isMixed = origOrder?.seed_mode === 'mixed-allocation' || origOrder?.current_stage === 'mixed-allocation';
+    const defaultSource = isStocking ? 'Seed Van' : 'Packing';
+    const returnSource = docData.return_source || docData.source || (isMixed ? `Mixed - ${defaultSource}` : defaultSource);
+    const reason = bill.reason || pd.reason || docData.reason || '—';
+    const originalBillAmount = Number(origOrder?.total_price || origOrder?.grand_total || 0);
+
+    // Remaining Qty logic
+    let remainingQty = docData.remaining_qty != null ? docData.remaining_qty : (pd.remaining_qty != null ? pd.remaining_qty : '—');
+    let tankName = bill.original_tank || bill.drum_name || pd.tank_name || docData.original_tank || docData.drum_name || docData.tank_name || docData.tank || '—';
+    if (tankName === '—' && pd.tank_id && origOrder?.selected_tanks) {
+      const st = origOrder.selected_tanks.find(t => String(t.id) === String(pd.tank_id) || String(t.originalTankId) === String(pd.tank_id));
+      if (st && st.name) tankName = st.name;
+    }
+    if ((remainingQty === '—' || remainingQty == null) && origOrder && origOrder.selected_tanks) {
+      const st = origOrder.selected_tanks.find(t => String(t.name) === String(tankName) || String(t.id) === String(pd.tank_id));
+      if (st) {
+        const origTankQty = Number(st.initialQty || st.quantity || 0);
+        remainingQty = Math.max(0, origTankQty - returnedQty);
+      }
+    }
+    const returnType = remainingQty === 0 || remainingQty === '0' ? 'Full' : 'Partial';
+
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-sm font-bold"
+              style={{ color: '#000', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
+              <span style={{ color: '#000' }}>Back</span>
+            </button>
+          )}
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-800">
+              🔒 Read-Only Return
+            </span>
+          </div>
+        </div>
+
+        <div ref={detailRef} className="space-y-6 pb-20 p-2 bg-white">
+          <div className="rounded-[16px] px-6 py-5 flex items-center justify-between shadow-md text-white bg-slate-800">
+            <div className="space-y-1">
+              <span className="text-xs uppercase tracking-wider font-semibold text-white/80">Return Bill</span>
+              <h2 className="text-3xl font-extrabold">{bill.bill_number || '—'}</h2>
+            </div>
+            <div className="text-right">
+              <span className="text-xs uppercase tracking-wider font-semibold text-white/80 block">Return Date</span>
+              <p className="text-lg font-extrabold text-white">
+                {bill.created_at ? new Date(bill.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+              </p>
+            </div>
+          </div>
+
+          <SectionCard title="Return Overview" icon="📋">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <InfoField label="Original Bill No" value={origOrder?.bill_number || '—'} bold />
+              <InfoField label="Hatchery" value={bill.hatchery || origOrder?.hatchery || '—'} bold />
+              <InfoField label="Return Source" value={returnSource} bold />
+              <InfoField label="Vehicle" value={bill.vehicle_no || pd.vehicle_no || docData.vehicle_no || docData.vehicle || '—'} />
+              <InfoField label="Source Tank" value={tankName} />
+              <InfoField label="Returned Qty" value={returnedQty.toLocaleString('en-IN')} bold highlight />
+              <InfoField label="Remaining Qty" value={remainingQty !== '—' ? Number(remainingQty).toLocaleString('en-IN') : '—'} />
+              <InfoField label="Return Type" value={returnType} />
+              <InfoField label="Original Bill Amount" value={`₹${originalBillAmount.toLocaleString('en-IN')}`} />
+              <InfoField label="Finance Status" value={financeStatus.toUpperCase()} bold success={financeStatus === 'returned'} />
+            </div>
+            {reason && reason !== '—' && (
+              <div className="mt-4 p-3 bg-slate-50 border rounded-[8px] text-xs">
+                <span className="text-text-muted font-bold block mb-1">Remarks / Reason</span>
+                {reason}
+              </div>
+            )}
+            {(docData.photo || pd.photo || docData.video || pd.video) && (
+              <div className="mt-4 pt-4 border-t flex flex-wrap gap-4">
+                {(docData.photo || pd.photo) && (
+                  <div>
+                    <span className="text-text-muted font-bold block mb-1 text-xs">Attached Photo</span>
+                    <img src={docData.photo || pd.photo} alt="Return Evidence" className="max-h-48 rounded border object-contain bg-slate-900" />
+                  </div>
+                )}
+                {(docData.video || pd.video) && (
+                  <div>
+                    <span className="text-text-muted font-bold block mb-1 text-xs">Attached Video</span>
+                    <video src={docData.video || pd.video} controls className="max-h-48 rounded border max-w-xs bg-slate-900" />
+                  </div>
+                )}
+              </div>
+            )}
+          </SectionCard>
+
+          {financeStatus !== 'returned' && (
+            <SectionCard title="Finance Action" icon="💰">
+              <div className="flex flex-col md:flex-row gap-4 items-end">
+                <div className="flex-1">
+                  <label className="text-[11px] font-bold text-text-muted uppercase mb-1 block">
+                    Select Refund Bank Account
+                  </label>
+                  <select
+                    className="w-full p-2.5 text-sm border rounded-xl bg-slate-50 font-bold outline-none"
+                    style={{ borderColor: 'var(--color-border)' }}
+                    value={refundBankAccount}
+                    onChange={(e) => setRefundBankAccount(e.target.value)}
+                  >
+                    <option value="">-- Select Bank Account --</option>
+                    {companyBankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.bank_name} - {acc.account_number} ({acc.holder_name})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendToFinance}
+                  className="px-6 py-2.5 text-sm font-extrabold rounded-xl text-white shadow-md transition-all hover:scale-105"
+                  style={{ background: 'var(--color-primary)' }}
+                >
+                  Process Refund
+                </button>
+              </div>
+            </SectionCard>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Top Bar */}
@@ -1062,7 +1234,7 @@ export default function BillDetailsReadOnly({
           })
         )}
 
-                {/* ── 7. Outside Workers ── */}
+        {/* ── 7. Outside Workers ── */}
         <SectionCard title="Outside Workers" icon="👷">
           {!workersData ? (
             <EmptyNote text="Outside workers data not yet recorded." />

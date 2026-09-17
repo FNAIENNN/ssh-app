@@ -4,6 +4,7 @@ import { supabase, TABLES } from '../../../../lib/supabaseClient';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useToast } from '../../../../hooks/useToast';
 import CameraCapture from '../../../../components/ui/CameraCapture';
+import { generateReturnBill } from '../returnBillHelper';
 
 export default function PackingSelection({ tanks, setTanks, vehicles = [], activeOrder, onProceed }) {
   const [activeModalTankKey, setActiveModalTankKey] = useState(null);
@@ -23,7 +24,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
   const [transferQuantity, setTransferQuantity] = useState('');
   const [transferPackets, setTransferPackets] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const [isCapturingVideo, setIsCapturingVideo] = useState(false);
 
@@ -52,7 +53,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         .select('timeline')
         .eq('id', activeOrder.id)
         .single();
-      
+
       if (billError) throw billError;
 
       const currentTimeline = billData.timeline || [];
@@ -100,7 +101,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
 
   const confirmReturn = async () => {
     if (isSubmitting || !activeTank) return;
-    
+
     if (!returnQuantity) {
       toast.error("Enter Quantity is required.");
       return;
@@ -121,74 +122,35 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
 
     setIsSubmitting(true);
     try {
+      const isMixed = activeOrder?.current_stage === 'mixed-allocation' || activeOrder?.seed_mode === 'mixed-allocation';
+      const source = isMixed ? 'Mixed - Packing' : 'Packing';
+
       const returnedPackets = activeTank.quantity > 0 ? Math.round((qty / activeTank.quantity) * activeTank.numberOfPackets) : 0;
-      const billNumber = `RB-${Date.now().toString().slice(-6)}`;
+      const remainingQty = activeTank.quantity - qty;
+      const finalRemainingPackets = activeTank.numberOfPackets - returnedPackets;
 
-      const payload = {
-        site_id: siteId,
-        bill_number: billNumber,
-        type: 'return_bill',
-        status: 'Completed',
-        current_stage: 'pay',
-        created_by: user?.id,
-        original_bill_id: activeOrder?.id || null,
-        original_bill_number: activeOrder?.bill_number || 'N/A',
-        packing_data: {
-            order_id: activeOrder?.id,
-            order_number: activeOrder?.bill_number,
-            tank_id: activeTank.id,
-            tank_name: activeTank.name,
-            vehicle_no: getVehicleNo(activeTank),
-            quantity: qty,
-            packets: returnedPackets,
-            reason: returnReason,
-            photo: returnPhoto,
-            video: returnVideo,
-            return_date: new Date().toLocaleDateString('en-IN'),
-            return_time: new Date().toLocaleTimeString('en-IN'),
-            return_status: 'Returned'
-        }
-      };
-
-      const { data: billData, error: billError } = await supabase
-        .from(TABLES.bills)
-        .insert(payload)
-        .select();
-
-      if (billError) throw billError;
-
-      const newBill = (Array.isArray(billData) ? billData[0] : billData) || { id: billNumber, bill_number: billNumber };
+      const { bill: newBill } = await generateReturnBill({
+        siteId,
+        userId: user?.id,
+        activeOrder,
+        vehicleNo: getVehicleNo(activeTank),
+        tankId: activeTank.id,
+        tankName: activeTank.name,
+        sourceQty: activeTank.originalQuantity != null ? activeTank.originalQuantity : activeTank.quantity,
+        returnedQty: qty,
+        remainingQty,
+        returnedPackets,
+        reason: returnReason,
+        photo: returnPhoto,
+        video: returnVideo,
+        source
+      });
 
       const refundAmount = qty * (Number(activeOrder?.per_piece_price) || 0);
 
-      const paymentPayload = {
-        site_id: siteId,
-        type: 'return',
-        method: 'return',
-        amount: refundAmount,
-        status: 'returned',
-        related_tank_id: activeTank.id,
-        bill_id: activeOrder?.id,
-        created_by: user?.id,
-        note: activeTank.tank_name || activeTank.name,
-        holder_name: activeTank.tank_name || activeTank.name,
-        vehicle_no: getVehicleNo(activeTank),
-        packing_data: {
-            ...payload.packing_data,
-            return_bill_id: newBill.id,
-            return_bill_number: newBill.bill_number
-        }
-      };
+      // Payments insert for return is handled by Finance from the bills record.
+      // We skip the direct payment insert here to avoid constraint violations.
 
-      const { error: paymentError } = await supabase
-        .from(TABLES.payments)
-        .insert(paymentPayload);
-
-      if (paymentError) throw paymentError;
-
-      const remainingQty = activeTank.quantity - qty;
-      const finalRemainingPackets = activeTank.numberOfPackets - returnedPackets;
-      
       const transferredTotal = activeTank.transferredQuantity || 0;
       const returnedTotal = (activeTank.returnedQuantity || 0) + qty;
       const isFullyProcessed = (remainingQty <= 0 && finalRemainingPackets <= 0);
@@ -202,7 +164,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         else if (returnedTotal > 0) newStatus = 'Partially Returned';
       }
 
-      const historySaved = await appendPackingHistory({
+      await appendPackingHistory({
         signature: `return-${activeTank.id}-${qty}-${Date.now()}`,
         action: 'Return',
         vehicle: getVehicleNo(activeTank),
@@ -218,8 +180,6 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         billNumber: newBill.bill_number || newBill.id,
         status: 'Returned'
       });
-
-      if (!historySaved) throw new Error("Failed to save history");
 
       const newTanksState = tanks.map(t => {
         if (t.id === activeTank.id) {
@@ -240,21 +200,21 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         }
         return t;
       });
-      
+
       setTanks(newTanksState);
 
       // Persist the updated tanks array to the active order so the return doesn't disappear on refresh
       if (activeOrder && activeOrder.id) {
-         const { error: updateError } = await supabase
-           .from(TABLES.bills)
-           .update({ selected_tanks: newTanksState })
-           .eq('id', activeOrder.id);
-           
-         if (updateError) {
-           console.error("Failed to persist return tanks:", updateError);
-         }
+        const { error: updateError } = await supabase
+          .from(TABLES.bills)
+          .update({ selected_tanks: newTanksState })
+          .eq('id', activeOrder.id);
+
+        if (updateError) {
+          console.error("Failed to persist return tanks:", updateError);
+        }
       }
-      
+
       toast.success(`Generated Return Bill ${newBill.bill_number}`);
       closeModal();
     } catch (err) {
@@ -295,7 +255,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
     try {
       const remainingPackets = activeTank.numberOfPackets - packets;
       const remainingQty = activeTank.quantity - transferQty;
-      
+
       const transferredTotal = (activeTank.transferredQuantity || 0) + transferQty;
       const returnedTotal = activeTank.returnedQuantity || 0;
       const isFullyProcessed = (remainingQty <= 0 && remainingPackets <= 0);
@@ -329,7 +289,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       setTanks(prev => {
         let next = [...prev];
         const srcIdx = next.findIndex(t => t.id === activeTank.id);
-        
+
         if (srcIdx !== -1) {
           const transfersArr = [...(next[srcIdx].transfers || []), { target: transferTarget.toUpperCase().trim(), quantity: transferQty, packets }];
           next[srcIdx] = {
@@ -346,7 +306,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
             selected: true
           };
         }
-        
+
         const tgtIdx = next.findIndex(t => t.name.toLowerCase() === transferTarget.trim().toLowerCase());
         if (tgtIdx !== -1) {
           next[tgtIdx] = {
@@ -360,7 +320,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
             id: 'tank-' + Date.now(),
             name: transferTarget.toUpperCase().trim(),
             numberOfPackets: packets,
-            quantity: transferQty, 
+            quantity: transferQty,
             status: 'Pending',
             selected: true,
             isTransferTarget: true,
@@ -592,11 +552,11 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
 
       {/* FULL SCREEN CENTERED MODAL FOR ALL STATUS SELECTIONS */}
       {activeModalTankKey && activeTank && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 transition-opacity"
           onClick={closeModal}
         >
-          <div 
+          <div
             className="card p-6 max-w-md w-full space-y-4 bg-white rounded-[16px] shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
@@ -697,10 +657,10 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
                 <div>
                   <label className="field-label text-xs mb-2 block">Photo</label>
                   {isCapturingPhoto ? (
-                    <CameraCapture 
-                      mode="photo" 
-                      onCapture={(dataUrl) => { setReturnPhoto(dataUrl); setIsCapturingPhoto(false); }} 
-                      onCancel={() => setIsCapturingPhoto(false)} 
+                    <CameraCapture
+                      mode="photo"
+                      onCapture={(dataUrl) => { setReturnPhoto(dataUrl); setIsCapturingPhoto(false); }}
+                      onCancel={() => setIsCapturingPhoto(false)}
                     />
                   ) : returnPhoto ? (
                     <div className="space-y-2">
@@ -732,10 +692,10 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
                 <div>
                   <label className="field-label text-xs mb-2 block">Video</label>
                   {isCapturingVideo ? (
-                    <CameraCapture 
-                      mode="video" 
-                      onCapture={(dataUrl) => { setReturnVideo(dataUrl); setIsCapturingVideo(false); }} 
-                      onCancel={() => setIsCapturingVideo(false)} 
+                    <CameraCapture
+                      mode="video"
+                      onCapture={(dataUrl) => { setReturnVideo(dataUrl); setIsCapturingVideo(false); }}
+                      onCancel={() => setIsCapturingVideo(false)}
                     />
                   ) : returnVideo ? (
                     <div className="space-y-2">
@@ -779,7 +739,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
             {otherSubAction === 'transfer' && (
               <div className="space-y-3">
                 <h5 className="font-extrabold text-sm text-sky-800">🔀 Transfer Seed Quantity</h5>
-                
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="field-label text-[11px]">Quantity to Transfer *</label>

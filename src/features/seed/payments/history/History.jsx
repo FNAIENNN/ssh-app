@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
 import BillDetailsReadOnly from '../BillDetailsReadOnly';
+import { isOrderFullyCompleted } from '../seedOrderHelpers';
 
 // ── Date filter helpers ────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ export default function History({ siteId }) {
         .from(TABLES.bills)
         .select('*')
         .eq('site_id', siteId)
-        .in('type', ['seed', 'seed_order', 'return'])
+        .in('type', ['seed', 'seed_order', 'return', 'return_bill'])
         .order('created_at', { ascending: false });
       setAllBills(data ?? []);
     } catch (err) {
@@ -116,7 +117,8 @@ export default function History({ siteId }) {
 
   // ── Filtered list ─────────────────────────────────────────────────────────
   const filteredBills = useMemo(() => {
-    let result = allBills.filter((b) => isWithin(b.created_at, dateFilter));
+    // History ONLY shows fully completed orders
+    let result = allBills.filter(b => isOrderFullyCompleted(b) && isWithin(b.created_at, dateFilter));
 
     if (query.trim()) {
       const q = query.toLowerCase();
@@ -218,11 +220,11 @@ export default function History({ siteId }) {
       ) : filteredBills.length === 0 ? (
         <div className="card p-8 text-center space-y-2 border-dashed border-2">
           <div className="text-4xl">📂</div>
-          <p className="font-bold">No bills found</p>
+          <p className="font-bold">No completed bills found</p>
           <p className="text-xs text-text-muted">
             {query || dateFilter !== 'all'
               ? 'Try changing filters or search terms.'
-              : 'Complete a Seed Order workflow to see bills here.'}
+              : 'Complete a full Seed Order workflow end-to-end to see it here.'}
           </p>
         </div>
       ) : (

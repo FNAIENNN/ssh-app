@@ -60,22 +60,28 @@ export function nextTrailNettingBillNumber(siteName = '', existingBills = []) {
 export async function autosaveBillStep(supabase, TABLES, billId, fields = {}, timelineAction = null, userName = null) {
   if (!billId) return null;
 
-  const { data: existing, error: readErr } = await supabase
-    .from(TABLES.bills)
-    .select('*')
-    .eq('id', billId)
-    .maybeSingle();
+  let existing = null;
+  try {
+    const { data, error: readErr } = await supabase
+      .from(TABLES.bills)
+      .select('*')
+      .eq('id', billId)
+      .maybeSingle();
 
-  if (readErr) {
-    console.error('autosaveBillStep read failed', readErr);
-    return null;
+    if (readErr) {
+      console.warn('autosaveBillStep read failed', readErr);
+    } else {
+      existing = data;
+    }
+  } catch (err) {
+    console.warn('autosaveBillStep read threw', err);
   }
 
   const now = new Date().toISOString();
   const next = { ...(existing || {}), ...fields, updated_at: now };
 
+  let timeline = Array.isArray(existing?.timeline) ? [...existing.timeline] : [];
   if (timelineAction) {
-    const timeline = Array.isArray(existing?.timeline) ? [...existing.timeline] : [];
     timeline.push({
       id: `tl-${Date.now()}`,
       step: timelineAction,
@@ -89,17 +95,29 @@ export async function autosaveBillStep(supabase, TABLES, billId, fields = {}, ti
     next.timeline = timeline;
   }
 
-  const { data, error } = await supabase
-    .from(TABLES.bills)
-    .update(next)
-    .eq('id', billId)
-    .select();
+  const updatePayload = {
+    ...fields,
+    updated_at: now,
+    ...(timeline.length > 0 ? { timeline } : {})
+  };
+  delete updatePayload.id;
 
-  if (error) {
-    console.error('autosaveBillStep update failed', error);
+  try {
+    const { data, error } = await supabase
+      .from(TABLES.bills)
+      .update(updatePayload)
+      .eq('id', billId)
+      .select();
+
+    if (error) {
+      console.warn('autosaveBillStep update failed', error);
+      return next;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return row || next;
+  } catch (err) {
+    console.warn('autosaveBillStep update threw', err);
     return next;
   }
-
-  const row = Array.isArray(data) ? data[0] : data;
-  return row || next;
 }
