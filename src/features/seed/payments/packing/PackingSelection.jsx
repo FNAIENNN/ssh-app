@@ -39,6 +39,15 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
     }
   };
 
+  const getRemainingQty = (t) => {
+    if (!t) return 0;
+    return (Number(t.quantity) || 0) - (Number(t.returnedQuantity) || 0) - (Number(t.transferredQuantity) || 0);
+  };
+  const getRemainingPackets = (t) => {
+    if (!t) return 0;
+    return (Number(t.numberOfPackets) || 0) - (Number(t.returnedPackets) || 0) - (Number(t.transferredPackets) || 0);
+  };
+
   const getVehicleNo = (tank) => {
     const searchId = tank.originalTankId || tank.id;
     const assignedVehicle = vehicles.find(v => (v.tank_ids || v.selectedTanks || []).some(id => String(id) === String(searchId)));
@@ -111,7 +120,8 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       toast.error("Quantity must be greater than 0.");
       return;
     }
-    if (qty > activeTank.quantity) {
+    const currentRemQty = getRemainingQty(activeTank);
+    if (qty > currentRemQty) {
       toast.error("Return quantity cannot exceed the remaining quantity.");
       return;
     }
@@ -125,9 +135,11 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       const isMixed = activeOrder?.current_stage === 'mixed-allocation' || activeOrder?.seed_mode === 'mixed-allocation';
       const source = isMixed ? 'Mixed - Packing' : 'Packing';
 
-      const returnedPackets = activeTank.quantity > 0 ? Math.round((qty / activeTank.quantity) * activeTank.numberOfPackets) : 0;
-      const remainingQty = activeTank.quantity - qty;
-      const finalRemainingPackets = activeTank.numberOfPackets - returnedPackets;
+      const currentRemQty = getRemainingQty(activeTank);
+      const currentRemPackets = getRemainingPackets(activeTank);
+      const returnedPackets = currentRemQty > 0 ? Math.round((qty / currentRemQty) * currentRemPackets) : 0;
+      const remainingQty = currentRemQty - qty;
+      const finalRemainingPackets = currentRemPackets - returnedPackets;
 
       const { bill: newBill } = await generateReturnBill({
         siteId,
@@ -190,8 +202,9 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
             originalPackets: t.originalPackets != null ? t.originalPackets : t.numberOfPackets,
             status: newStatus,
             selected: true,
-            quantity: remainingQty,
-            numberOfPackets: finalRemainingPackets,
+            // Do not overwrite original quantity
+            // quantity: remainingQty,
+            // numberOfPackets: finalRemainingPackets,
             returnedQuantity: returnedTotal,
             returnedPackets: (t.returnedPackets || 0) + returnedPackets,
             returnReason,
@@ -237,7 +250,8 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       toast.error("Enter Quantity is required and must be greater than 0.");
       return;
     }
-    if (transferQty > activeTank.quantity) {
+    const currentRemQty = getRemainingQty(activeTank);
+    if (transferQty > currentRemQty) {
       toast.error("Transfer quantity cannot exceed the available quantity.");
       return;
     }
@@ -246,15 +260,18 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       toast.error("Number of Packets must be greater than 0.");
       return;
     }
-    if (packets > activeTank.numberOfPackets) {
+    const currentRemPackets = getRemainingPackets(activeTank);
+    if (packets > currentRemPackets) {
       toast.error("Requested packets cannot exceed the remaining packets.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const remainingPackets = activeTank.numberOfPackets - packets;
-      const remainingQty = activeTank.quantity - transferQty;
+      const currentRemQty = getRemainingQty(activeTank);
+      const currentRemPackets = getRemainingPackets(activeTank);
+      const remainingPackets = currentRemPackets - packets;
+      const remainingQty = currentRemQty - transferQty;
 
       const transferredTotal = (activeTank.transferredQuantity || 0) + transferQty;
       const returnedTotal = activeTank.returnedQuantity || 0;
@@ -296,8 +313,9 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
             ...next[srcIdx],
             originalQuantity: next[srcIdx].originalQuantity != null ? next[srcIdx].originalQuantity : next[srcIdx].quantity,
             originalPackets: next[srcIdx].originalPackets != null ? next[srcIdx].originalPackets : next[srcIdx].numberOfPackets,
-            quantity: remainingQty,
-            numberOfPackets: remainingPackets,
+            // Do not overwrite original quantity
+            // quantity: remainingQty,
+            // numberOfPackets: remainingPackets,
             status: newStatus,
             transferredTarget: transferTarget.toUpperCase(),
             transferredQuantity: transferredTotal,
@@ -352,8 +370,8 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         targetTank: '—',
         quantity: activeTank.quantity,
         packets: activeTank.numberOfPackets,
-        remainingQty: activeTank.quantity,
-        remainingPackets: activeTank.numberOfPackets,
+        remainingQty: getRemainingQty(activeTank),
+        remainingPackets: getRemainingPackets(activeTank),
         reason: '—',
         billNumber: '—',
         status: status
@@ -381,7 +399,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
     onProceed();
   };
 
-  const validTanks = tanks.filter(t => t.quantity > 0 || t.status === 'Transferred' || t.status === 'Returned');
+  const validTanks = tanks.filter(t => getRemainingQty(t) > 0 || t.status === 'Transferred' || t.status === 'Returned');
 
   const renderTankGrid = (tankList) => (
     <div className="grid grid-cols-2 gap-4">
@@ -408,7 +426,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
           textColor = '#1e3a8a';
         }
 
-        const isFullyDone = t.quantity <= 0 && t.numberOfPackets <= 0 && (t.status === 'Transferred' || t.status === 'Returned');
+        const isFullyDone = getRemainingQty(t) <= 0 && getRemainingPackets(t) <= 0 && (t.status === 'Transferred' || t.status === 'Returned');
 
         return (
           <div key={t.id} className="relative">
@@ -416,8 +434,8 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
               onClick={() => {
                 if (t.status !== 'Transferred' && t.status !== 'Returned') {
                   setActiveModalTankKey(t.id);
-                  setTransferQuantity(String(t.quantity));
-                  setTransferPackets(String(t.numberOfPackets));
+                  setTransferQuantity(String(getRemainingQty(t)));
+                  setTransferPackets(String(getRemainingPackets(t)));
                   setSelectedAction(null);
                   setOtherSubAction(null);
                 }
@@ -440,10 +458,10 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
               ) : (
                 <div className="space-y-0.5">
                   <p className="text-xs font-semibold" style={{ color: textColor }}>
-                    {Number(t.quantity).toLocaleString('en-IN')} pcs
+                    {Number(getRemainingQty(t)).toLocaleString('en-IN')} pcs
                   </p>
                   <p className="text-xs font-semibold" style={{ color: textColor }}>
-                    {t.numberOfPackets} packets
+                    {getRemainingPackets(t)} packets
                   </p>
                 </div>
               )}
@@ -639,11 +657,11 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
                   <input
                     type="number"
                     className="field text-sm"
-                    placeholder={`Max: ${activeTank.quantity}`}
+                    placeholder={`Max: ${getRemainingQty(activeTank)}`}
                     value={returnQuantity}
                     onChange={(e) => setReturnQuantity(e.target.value)}
                   />
-                  <p className="text-[10px] text-text-muted mt-1">Available in Tank: {activeTank.quantity} pcs</p>
+                  <p className="text-[10px] text-text-muted mt-1">Available in Tank: {getRemainingQty(activeTank)} pcs</p>
                 </div>
                 <div>
                   <label className="field-label text-xs">Reason for Return *</label>
@@ -746,22 +764,22 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
                     <input
                       type="number"
                       className="field text-sm"
-                      placeholder={`Max: ${activeTank.quantity}`}
+                      placeholder={`Max: ${getRemainingQty(activeTank)}`}
                       value={transferQuantity}
                       onChange={(e) => setTransferQuantity(e.target.value)}
                     />
-                    <p className="text-[10px] text-text-muted mt-1">Available: {activeTank.quantity} pcs</p>
+                    <p className="text-[10px] text-text-muted mt-1">Available: {getRemainingQty(activeTank)} pcs</p>
                   </div>
                   <div>
                     <label className="field-label text-[11px]">Number of Packets *</label>
                     <input
                       type="number"
                       className="field text-sm"
-                      placeholder={`Max: ${activeTank.numberOfPackets}`}
+                      placeholder={`Max: ${getRemainingPackets(activeTank)}`}
                       value={transferPackets}
                       onChange={(e) => setTransferPackets(e.target.value)}
                     />
-                    <p className="text-[10px] text-text-muted mt-1">Available: {activeTank.numberOfPackets} pkt</p>
+                    <p className="text-[10px] text-text-muted mt-1">Available: {getRemainingPackets(activeTank)} pkt</p>
                   </div>
                 </div>
 

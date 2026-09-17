@@ -4,19 +4,78 @@ import { useToast } from '../../../../hooks/useToast';
 import PackingDetails from './PackingDetails';
 import PackingSelection from './PackingSelection';
 import PackingSummary from './PackingSummary';
+import { aggregateTankStates } from '../seedStocking/stockingUtils';
 
 export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehicles = [], onGoToHistory, onBack }) {
   const toast = useToast();
   // Master state preserving all details throughout the steps
   const [tanks, setTanks] = useState(() => {
-    const isMixedMode = activeOrder?.current_stage === 'mixed-allocation';
-    return initialTanks.map(t => {
-      const maxQ = tankQtys?.[t.id] || 0;
+    const isMixedMode = activeOrder?.current_stage === 'mixed-allocation' || activeOrder?.type === 'mixed' || Boolean(activeOrder?.packing_data && activeOrder?.stocking_status_data);
+
+    // Build combined list of original tanks + Seed Van transfer targets
+    const tanksMap = new Map();
+
+    (initialTanks || []).forEach(t => {
+      if (!t || !t.name) return;
+      const normKey = String(t.name).trim().toUpperCase();
+      tanksMap.set(normKey, {
+        ...t,
+        id: t.id,
+        name: t.name,
+        qty: Number(t.qty || t.quantity) || 0,
+        isTransferTarget: false
+      });
+    });
+
+    // Discover Seed Van transfer targets from stocking_status_data
+    if (activeOrder?.stocking_status_data) {
+      Object.entries(activeOrder.stocking_status_data).forEach(([vId, vData]) => {
+        if (vId === 'supervisorName' || vId === 'supervisorPhone' || vId === 'supervisorSignature' || vId === 'seedVanCompleted') return;
+        if (vData?.tankStates) {
+          const aggregated = aggregateTankStates(vData.tankStates, vData.transfers);
+          aggregated.forEach(agg => {
+            if (!agg || !agg.tankName) return;
+            const normKey = String(agg.tankName).trim().toUpperCase();
+            if (!tanksMap.has(normKey) && agg.totalCount > 0) {
+              tanksMap.set(normKey, {
+                id: agg.targetTankId || agg.tankName,
+                name: agg.tankName,
+                qty: agg.totalCount,
+                isTransferTarget: true
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Also include any previously saved packing tanks that were transfer targets
+    if (activeOrder?.packing_data?.tanks) {
+      activeOrder.packing_data.tanks.forEach(pt => {
+        if (!pt || !pt.name) return;
+        const normKey = String(pt.name).trim().toUpperCase();
+        if (!tanksMap.has(normKey) && pt.isTransferTarget) {
+          tanksMap.set(normKey, {
+            ...pt,
+            id: pt.id || pt.name,
+            name: pt.name,
+            qty: Number(pt.quantity) || 0,
+            isTransferTarget: true
+          });
+        }
+      });
+    }
+
+    const unifiedTanksList = Array.from(tanksMap.values());
+
+    return unifiedTanksList.map(t => {
+      const normKey = String(t.name).trim().toUpperCase();
+      const maxQ = tankQtys?.[t.id] ?? tankQtys?.[normKey] ?? Number(t.qty || 0);
       let initialQty = maxQ;
       let initialPackets = '';
 
       if (isMixedMode) {
-        const savedTank = activeOrder?.packing_data?.tanks?.find(st => st.id === t.id);
+        const savedTank = activeOrder?.packing_data?.tanks?.find(st => String(st.id) === String(t.id) || String(st.name || '').trim().toUpperCase() === normKey);
         if (savedTank) {
           initialQty = savedTank.quantity;
           initialPackets = savedTank.numberOfPackets || '';
@@ -55,7 +114,7 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
 
     const selectedTanks = tanks.filter(t => t.selected);
     const existingTanks = activeOrder?.packing_data?.tanks || [];
-    const otherTanks = existingTanks.filter(et => !selectedTanks.some(st => st.id === et.id));
+    const otherTanks = existingTanks.filter(et => !selectedTanks.some(st => String(st.id) === String(et.id) || String(st.name || '').trim().toUpperCase() === String(et.name || '').trim().toUpperCase()));
     const mergedTanks = [...otherTanks, ...selectedTanks];
 
     const totalQuantity = mergedTanks.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);

@@ -1,9 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { getAssignedVehicleIds } from '../seedStocking/stockingUtils';
+import { supabase, TABLES } from '../../../../lib/supabaseClient';
+import { useAuth } from '../../../../hooks/useAuth';
+import { autosaveBillStep } from '../../../../lib/bills';
 
 export default function PackingDetails({ tanks, setTanks, vehicles = [], activeOrder = null, onNext }) {
+  const { user } = useAuth();
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
-  const [savedVehicles, setSavedVehicles] = useState(new Set());
+  const [savedVehicles, setSavedVehicles] = useState(() => {
+    const initialSet = new Set();
+    if (Array.isArray(activeOrder?.packing_data?.savedVehicleIds)) {
+      activeOrder.packing_data.savedVehicleIds.forEach(id => initialSet.add(String(id)));
+    }
+    if (Array.isArray(activeOrder?.packing_data?.tanks) && activeOrder.packing_data.tanks.length > 0 && Array.isArray(vehicles)) {
+      const configuredTankIds = new Set(
+        activeOrder.packing_data.tanks
+          .filter(pt => Number(pt.quantity) > 0 || Number(pt.numberOfPackets) > 0)
+          .map(pt => String(pt.id))
+      );
+      vehicles.forEach(v => {
+        const tids = (v.tank_ids || v.selectedTanks || []).map(String);
+        if (tids.some(tid => configuredTankIds.has(tid))) {
+          initialSet.add(String(v.id));
+        }
+      });
+    }
+    return initialSet;
+  });
   const [showMixedConfirm, setShowMixedConfirm] = useState(false);
+
+  const { vanPlanVehicleIds } = useMemo(() => {
+    return getAssignedVehicleIds(activeOrder, null, null, savedVehicles, vehicles);
+  }, [activeOrder, savedVehicles, vehicles]);
+
+  const availablePackingVehicles = useMemo(() => {
+    return vehicles.filter(v => {
+      const vId = String(v.id);
+      if (vanPlanVehicleIds.has(vId)) return false;
+      return true;
+    });
+  }, [vehicles, vanPlanVehicleIds]);
 
   // Update packet count for a specific tank
   const handlePacketsChange = (id, val) => {
@@ -24,13 +60,13 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
     }
   };
 
-  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
-  const selectedIndex = vehicles.findIndex(v => v.id === selectedVehicleId);
+  const selectedVehicle = vehicles.find(v => String(v.id) === String(selectedVehicleId));
+  const selectedIndex = vehicles.findIndex(v => String(v.id) === String(selectedVehicleId));
 
-  const handleSaveVehicle = () => {
+  const handleSaveVehicle = async () => {
     if (!selectedVehicle) return;
-    const tids = selectedVehicle.tank_ids || selectedVehicle.selectedTanks || [];
-    const vTanks = tanks.filter(t => tids.includes(t.id));
+    const tids = (selectedVehicle.tank_ids || selectedVehicle.selectedTanks || []).map(String);
+    const vTanks = tanks.filter(t => tids.includes(String(t.id)));
     const isMixedMode = activeOrder?.current_stage === 'mixed-allocation';
 
     const missingQty = vTanks.some(t => {
@@ -63,15 +99,43 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
       return;
     }
 
-    setSavedVehicles(prev => {
-      const nextSet = new Set(prev);
-      nextSet.add(selectedVehicleId);
-      return nextSet;
+    const savedId = String(selectedVehicleId);
+    const nextSet = new Set(savedVehicles);
+    nextSet.add(savedId);
+    setSavedVehicles(nextSet);
+
+    if (activeOrder?.id) {
+      const updatedSavedIds = Array.from(nextSet);
+      const updatedPackingData = {
+        ...(activeOrder.packing_data || {}),
+        savedVehicleIds: updatedSavedIds,
+        tanks: tanks.filter(t => Number(t.quantity) > 0 || Number(t.numberOfPackets) > 0)
+      };
+      await autosaveBillStep(
+        supabase, TABLES, activeOrder.id,
+        { packing_data: updatedPackingData },
+        'Packing Saved for Vehicle',
+        user?.email
+      );
+      activeOrder.packing_data = updatedPackingData;
+    }
+
+    const nextUnconfigured = vehicles.find(v => {
+      const vId = String(v.id);
+      return !nextSet.has(vId) && !vanPlanVehicleIds.has(vId);
     });
+
+    if (nextUnconfigured) {
+      setSelectedVehicleId(nextUnconfigured.id);
+    } else {
+      setSelectedVehicleId('');
+    }
   };
 
   const handleNext = () => {
-    if (vehicles.length > 0 && savedVehicles.size < vehicles.length) {
+    const vehiclesForPacking = vehicles.filter(v => !vanPlanVehicleIds.has(String(v.id)));
+
+    if (vehiclesForPacking.length > 0 && savedVehicles.size < vehiclesForPacking.length) {
       if (activeOrder?.current_stage === 'mixed-allocation') {
         if (savedVehicles.size > 0) {
           setShowMixedConfirm(true);
@@ -168,11 +232,16 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
             onChange={(e) => setSelectedVehicleId(e.target.value)}
           >
             <option value="">-- Select a Vehicle --</option>
-            {vehicles.map((v, i) => (
-              <option key={v.id} value={v.id}>
-                Vehicle {i + 1} · {v.vehicle_no || v.vehicleNo || 'No Reg'} {savedVehicles.has(v.id) ? '✓ Saved' : ''}
-              </option>
-            ))}
+            {availablePackingVehicles.map((v) => {
+              const originalIndex = vehicles.findIndex(orig => String(orig.id) === String(v.id));
+              const vehicleLabel = `Vehicle ${originalIndex >= 0 ? originalIndex + 1 : ''} · ${v.vehicle_no || v.vehicleNo || 'No Reg'}`;
+              const isSaved = savedVehicles.has(String(v.id));
+              return (
+                <option key={v.id} value={v.id}>
+                  {vehicleLabel} {isSaved ? '✓ Saved' : ''}
+                </option>
+              );
+            })}
           </select>
         </div>
       )}
@@ -182,7 +251,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
         const i = selectedIndex;
         const tids = v.tank_ids || v.selectedTanks || [];
         const vTanks = tanks.filter(t => tids.includes(t.id));
-        const isSaved = savedVehicles.has(v.id);
+        const isSaved = savedVehicles.has(String(v.id));
 
         return (
           <div key={v.id} className="space-y-3 mb-6 p-4 rounded-[12px] border bg-slate-50 shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
@@ -200,22 +269,23 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
             {vTanks.length > 0 ? (
               renderTankTable(vTanks)
             ) : (
-              <p className="text-xs font-bold text-slate-500 italic">No tanks assigned to this vehicle.</p>
+              <p className="text-xs text-text-muted italic">No tanks assigned to this vehicle.</p>
             )}
 
-            <div className="pt-3 flex justify-end">
+            <div className="pt-2 flex justify-end">
               <button
                 type="button"
                 onClick={handleSaveVehicle}
-                className="btn-primary px-6 py-2 text-sm shadow-sm"
+                className="btn-primary text-xs py-2 px-4 font-bold"
               >
-                Save
+                {isSaved ? 'Update Saved Details' : 'Save Vehicle Details'}
               </button>
             </div>
           </div>
         );
       })()}
 
+      {/* Render unassigned tanks table if any tanks are not mapped to vehicles */}
       {unassignedTanks.length > 0 && (
         <div className="space-y-3 mb-6 p-4 rounded-[12px] bg-red-50/50 border border-red-200 shadow-sm">
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-red-200">
@@ -254,7 +324,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
                 type="button"
                 onClick={() => {
                   setShowMixedConfirm(false);
-                  const unconfigured = vehicles.find(v => !savedVehicles.has(v.id));
+                  const unconfigured = availablePackingVehicles.find(v => !savedVehicles.has(String(v.id)));
                   if (unconfigured) setSelectedVehicleId(unconfigured.id);
                 }}
                 className="btn-primary py-2.5 font-bold rounded-[8px]"
@@ -267,7 +337,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
                   setShowMixedConfirm(false);
                   onNext();
                 }}
-                className="btn-ghost py-2.5 font-bold rounded-[8px] border border-slate-300 hover:bg-slate-50 text-slate-700"
+                className="btn bg-white py-2.5 font-bold rounded-[8px] border-2 border-slate-300 hover:bg-slate-50 text-slate-700"
               >
                 No, Continue
               </button>

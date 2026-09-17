@@ -342,70 +342,69 @@ export default function TrailNettingReportsPage() {
               <tr className="h-[34px]">
                 <th
                   colSpan={39}
-                  className="text-center font-extrabold text-slate-900 py-2 text-sm tracking-wide uppercase border border-slate-400 align-middle box-border"
-                  style={{ background: '#f8cbad' }}
+                  className="text-center font-extrabold text-white py-2 text-sm tracking-wide uppercase border border-slate-200 align-middle box-border bg-blue-950"
                 >
                   Trail Netting Report & Pattubadi Planning
                 </th>
               </tr>
 
               {/* Multilevel Column Header Row 1 */}
-              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[11px] leading-tight h-[34px]">
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]" style={{ background: '#00e5ff' }}>
+              <tr className="border border-slate-200 font-bold text-white text-[11px] leading-tight h-[34px] bg-blue-900">
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[80px] align-middle box-border h-[68px] bg-blue-800">
                   Tank Nos
                 </th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-left min-w-[160px] align-middle box-border h-[68px]">Hatchery</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Seed Stocked</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Survived Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[55px] align-middle box-border h-[68px]">DOC</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[68px]">Latest Date</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[68px]">Previ Date</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Latest Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Previ Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Count Diff</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[75px] align-middle box-border h-[68px]">Groth Diff</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[120px] align-middle box-border h-[68px]">Wkly Grth as per Trail Netting</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Betw Period Feed Consp</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[110px] align-middle box-border h-[68px]">Betw Period Growth In Kgs</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[90px] align-middle box-border h-[68px]">Betw Period FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[85px] align-middle box-border h-[68px]">Feed Consp</th>
-                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 1</th>
-                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 2</th>
-                <th colSpan={3} className="py-1 px-1 border border-slate-400 text-center bg-amber-100/80 align-middle box-border h-[34px]">Middle 3</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[115px] align-middle box-border h-[68px]">Middle Harvested Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Seed</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Middle Tonnage Total</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Tonnage</th>
-                <th colSpan={2} className="py-1 px-1 border border-slate-400 text-center align-middle box-border h-[34px]">If FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]">Expected FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[150px] align-middle box-border h-[68px]">Expected Tonnage related to Feed & FCR</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[80px] align-middle box-border h-[68px]">Trailnet Count</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[160px] align-middle box-border h-[68px]">Expected Tonnage related to Rem Seed & Trailnet Count</th>
-                <th colSpan={2} className="py-1 px-1 border border-slate-400 text-center align-middle box-border h-[34px]">Final Harvest</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-right min-w-[105px] align-middle box-border h-[68px]">Total Seed Catched</th>
-                <th rowSpan={2} className="p-2 border border-slate-400 text-center min-w-[75px] align-middle box-border h-[68px]">Survival %</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-left min-w-[160px] align-middle box-border h-[68px]">Hatchery</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[90px] align-middle box-border h-[68px]">Seed Stocked</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[90px] align-middle box-border h-[68px]">Survived Seed</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[55px] align-middle box-border h-[68px]">DOC</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[85px] align-middle box-border h-[68px]">Latest Date</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[85px] align-middle box-border h-[68px]">Previ Date</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[75px] align-middle box-border h-[68px]">Latest Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[75px] align-middle box-border h-[68px]">Previ Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[75px] align-middle box-border h-[68px]">Count Diff</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[75px] align-middle box-border h-[68px]">Groth Diff</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[120px] align-middle box-border h-[68px]">Wkly Grth as per Trail Netting</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[105px] align-middle box-border h-[68px]">Betw Period Feed Consp</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[110px] align-middle box-border h-[68px]">Betw Period Growth In Kgs</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[90px] align-middle box-border h-[68px]">Betw Period FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[85px] align-middle box-border h-[68px]">Feed Consp</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-200 text-center bg-blue-800 align-middle box-border h-[34px]">Middle 1</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-200 text-center bg-blue-800 align-middle box-border h-[34px]">Middle 2</th>
+                <th colSpan={3} className="py-1 px-1 border border-slate-200 text-center bg-blue-800 align-middle box-border h-[34px]">Middle 3</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[115px] align-middle box-border h-[68px]">Middle Harvested Seed</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[105px] align-middle box-border h-[68px]">Middle Tonnage Total</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Tonnage</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[105px] align-middle box-border h-[68px]">Remaining Seed</th>
+                <th colSpan={2} className="py-1 px-1 border border-slate-200 text-center bg-blue-800 align-middle box-border h-[34px]">If FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[80px] align-middle box-border h-[68px]">Expected FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[150px] align-middle box-border h-[68px]">Expected Tonnage related to Feed & FCR</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[80px] align-middle box-border h-[68px]">Trailnet Count</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[160px] align-middle box-border h-[68px]">Expected Tonnage related to Rem Seed & Trailnet Count</th>
+                <th colSpan={2} className="py-1 px-1 border border-slate-200 text-center bg-blue-800 align-middle box-border h-[34px]">Final Harvest</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-right min-w-[105px] align-middle box-border h-[68px]">Total Seed Catched</th>
+                <th rowSpan={2} className="p-2 border border-slate-200 text-center min-w-[75px] align-middle box-border h-[68px]">Survival %</th>
               </tr>
 
               {/* Subheader Row 2 */}
-              <tr style={{ background: '#f8cbad' }} className="border border-slate-400 font-bold text-slate-900 text-[10px] leading-tight h-[34px]">
-                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">1.2</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">1.3</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[85px] align-middle box-border h-[34px]">Tonnage</th>
-                <th className="py-1 px-1.5 border border-slate-400 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+              <tr className="border border-slate-200 font-bold text-slate-700 text-[10px] leading-tight h-[34px] bg-slate-100">
+                <th className="py-1 px-1.5 border border-slate-200 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-center min-w-[85px] align-middle box-border h-[34px]">Middle Date</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[65px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">1.2</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">1.3</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[85px] align-middle box-border h-[34px]">Tonnage</th>
+                <th className="py-1 px-1.5 border border-slate-200 text-right min-w-[60px] align-middle box-border h-[34px]">Count</th>
               </tr>
             </thead>
 
             {/* Data Rows */}
-            <tbody className="divide-y divide-slate-300 font-mono text-slate-900">
+            <tbody className="divide-y divide-slate-200 font-mono text-slate-900 bg-white">
               {filteredRows.length > 0 ? (
                 filteredRows.map((r, i) => (
                   <tr
@@ -414,50 +413,50 @@ export default function TrailNettingReportsPage() {
                       const matchedTank = tanks.find((t) => t.id === r.tank_id || t.name === r.tankNo);
                       setSelectedHistoryItem({ tank: matchedTank, report: r.rawReport || r });
                     }}
-                    className="hover:bg-amber-100/60 cursor-pointer transition"
+                    className="even:bg-slate-50 hover:bg-blue-50 cursor-pointer transition"
                     title="Click to view complete Trail Netting process details"
                   >
-                    <td className="p-2 border border-slate-300 font-bold text-center" style={{ background: '#00ffff' }}>
+                    <td className="p-2 border border-slate-200 font-bold text-center bg-slate-100">
                       {r.tankNo}
                     </td>
-                    <td className="p-2 border border-slate-300 font-sans">{r.hatchery}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.seedStocked?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.survivedSeed?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-center font-bold">{r.doc}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.latestDate}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.previDate}</td>
-                    <td className="p-2 border border-slate-300 text-right font-bold">{r.latestCount}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.previCount}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.countDiff}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.growthDiff}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.weeklyGrowth}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.feedConspBetween}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.growthKgsBetween}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.fcrBetween}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.feedConspTotal}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.middle1Date}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle1Tonnage}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle1Count}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.middle2Date}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle2Tonnage}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle2Count}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.middle3Date}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle3Tonnage}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.middle3Count}</td>
-                    <td className="p-2 border border-slate-300 text-right font-bold">{r.middleHarvestedSeed?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.remainingSeed?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-right font-bold">{r.middleTonnageTotal}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.remainingTonnage}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.fcr12}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.fcr13}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.expectedFcr || '—'}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.expectedTonnageFeedFcr || '—'}</td>
-                    <td className="p-2 border border-slate-300 text-center">{r.trailnetCount || '—'}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.expectedTonnageRemSeed || '—'}</td>
-                    <td className="p-2 border border-slate-300 text-right font-bold">{r.finalHarvestTonnage?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-right">{r.count || '—'}</td>
-                    <td className="p-2 border border-slate-300 text-right font-bold">{r.totalSeedCatched?.toLocaleString('en-IN')}</td>
-                    <td className="p-2 border border-slate-300 text-center font-bold text-emerald-800">{r.survivalPercentage}%</td>
+                    <td className="p-2 border border-slate-200 font-sans">{r.hatchery}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.seedStocked?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.survivedSeed?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-center font-bold">{r.doc}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.latestDate}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.previDate}</td>
+                    <td className="p-2 border border-slate-200 text-right font-bold">{r.latestCount}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.previCount}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.countDiff}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.growthDiff}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.weeklyGrowth}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.feedConspBetween}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.growthKgsBetween}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.fcrBetween}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.feedConspTotal}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.middle1Date}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle1Tonnage}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle1Count}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.middle2Date}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle2Tonnage}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle2Count}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.middle3Date}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle3Tonnage}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.middle3Count}</td>
+                    <td className="p-2 border border-slate-200 text-right font-bold">{r.middleHarvestedSeed?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.remainingSeed?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-right font-bold">{r.middleTonnageTotal}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.remainingTonnage}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.fcr12}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.fcr13}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.expectedFcr || '—'}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.expectedTonnageFeedFcr || '—'}</td>
+                    <td className="p-2 border border-slate-200 text-center">{r.trailnetCount || '—'}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.expectedTonnageRemSeed || '—'}</td>
+                    <td className="p-2 border border-slate-200 text-right font-bold">{r.finalHarvestTonnage?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-right">{r.count || '—'}</td>
+                    <td className="p-2 border border-slate-200 text-right font-bold">{r.totalSeedCatched?.toLocaleString('en-IN')}</td>
+                    <td className="p-2 border border-slate-200 text-center font-bold text-slate-700">{r.survivalPercentage}%</td>
                   </tr>
                 ))
               ) : (

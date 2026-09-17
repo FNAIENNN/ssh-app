@@ -828,69 +828,6 @@ export default function CentralPayments() {
                 </button>
               )}
             </div>
-          ) : statusFilter === 'returned' ? (
-            <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white">
-              <table className="w-full text-left border-collapse whitespace-nowrap">
-                <thead>
-                  <tr className="bg-slate-900 text-white border-b border-slate-700 uppercase tracking-widest text-[10px]">
-                    <th className="p-3 font-bold text-left">Date & Time</th>
-                    <th className="p-3 font-bold text-left">Process / Return Source</th>
-                    <th className="p-3 font-bold text-left">Bill Number</th>
-                    <th className="p-3 font-bold text-left">Hatchery</th>
-                    <th className="p-3 font-bold text-right">Original Bill Amt</th>
-                    <th className="p-3 font-bold text-right">Ret. Quantity</th>
-                    <th className="p-3 font-bold text-right">Rem. Quantity</th>
-                    <th className="p-3 font-bold text-right">Refund Amount</th>
-                    <th className="p-3 font-bold text-center">Return Type</th>
-                    <th className="p-3 font-bold text-left">Vehicle</th>
-                    <th className="p-3 font-bold text-left">Tank</th>
-                    <th className="p-3 font-bold text-center">Finance Status</th>
-                    <th className="p-3 font-bold text-center">View Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRecords.map((r, idx) => {
-                    const badge = getStatusBadge(r.raw_status || r.finance_status || r.status);
-
-                    return (
-                      <tr
-                        key={r.id || idx}
-                        className="border-b last:border-0 hover:bg-slate-50 transition duration-150"
-                        style={{ borderColor: 'var(--color-border)' }}
-                      >
-                        <td className="p-3.5 text-xs text-slate-600 font-semibold">{formatDateDisplay(r.created_at)}</td>
-                        <td className="p-3.5 text-xs font-bold text-slate-800">{r.process}</td>
-                        <td className="p-3.5 text-xs font-bold text-blue-600 cursor-pointer hover:underline" onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}>
-                          {r.bill_number !== '—' ? r.bill_number : (r.original_bill_number !== '—' ? r.original_bill_number : '—')}
-                        </td>
-                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.party}</td>
-                        <td className="p-3.5 text-xs font-bold text-slate-700 text-right">₹{r.total_order_amount?.toLocaleString('en-IN') || '—'}</td>
-                        <td className="p-3.5 font-black text-red-700 text-right text-xs">{r.returned_quantity != null ? Number(r.returned_quantity).toLocaleString('en-IN') : '—'}</td>
-                        <td className="p-3.5 font-bold text-slate-600 text-right text-xs">{r.remaining_quantity != null ? Number(r.remaining_quantity).toLocaleString('en-IN') : '—'}</td>
-                        <td className="p-3.5 font-black text-emerald-700 text-right text-xs">₹{r.amount?.toLocaleString('en-IN') || '—'}</td>
-                        <td className="p-3.5 text-xs font-bold text-slate-600 text-center">{r.return_type || '—'}</td>
-                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.vehicle_no || '—'}</td>
-                        <td className="p-3.5 text-xs font-bold text-slate-700">{r.resolved_tank_name || '—'}</td>
-                        <td className="p-3.5 text-center">
-                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border inline-block" style={{ background: badge.bg, color: badge.color, borderColor: badge.border }}>
-                            {badge.label}
-                          </span>
-                        </td>
-                        <td className="p-3.5 font-bold text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBillModal(r.bill_object || { bill_number: r.bill_number })}
-                            className="font-extrabold text-blue-600 hover:text-blue-800 underline transition cursor-pointer text-xs"
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           ) : (
             <div className="overflow-x-auto rounded-[12px] border border-slate-200 shadow-sm bg-white" style={{ borderColor: 'var(--color-border)' }}>
               <table className="w-full text-left text-xs border-collapse">

@@ -80,37 +80,47 @@ export default function TankList() {
           const billTime = new Date(bill.updated_at || bill.created_at || 0).getTime();
 
           const owBatches = bill.outside_workers_data?.batches || [];
+          const topOWSelectedTanks = bill.outside_workers_data?.selectedTanks;
           const legacyPackData = bill.packing_outside_workers_data;
-          // 1. Process from Outside Workers Selected Tanks
-          const selectedTanksFromOW = [];
-          if (owBatches.length > 0) {
-            owBatches.forEach(b => {
-              if (Array.isArray(b.selectedTanks)) {
-                b.selectedTanks.forEach(t => selectedTanksFromOW.push(t));
+
+          const hasOWData = owBatches.length > 0 ||
+            Boolean(topOWSelectedTanks && Array.isArray(topOWSelectedTanks) && topOWSelectedTanks.length > 0) ||
+            Boolean(legacyPackData && Array.isArray(legacyPackData.selectedTanks) && legacyPackData.selectedTanks.length > 0);
+
+          if (hasOWData) {
+            // 1. Process directly from Outside Workers Selected Tanks (authoritative source for Trail Netting)
+            const selectedTanksFromOW = [];
+            if (owBatches.length > 0) {
+              owBatches.forEach(b => {
+                if (Array.isArray(b.selectedTanks)) {
+                  b.selectedTanks.forEach(t => selectedTanksFromOW.push(t));
+                }
+              });
+            } else if (Array.isArray(topOWSelectedTanks)) {
+              topOWSelectedTanks.forEach(t => selectedTanksFromOW.push(t));
+            } else if (legacyPackData && Array.isArray(legacyPackData.selectedTanks)) {
+              legacyPackData.selectedTanks.forEach(t => selectedTanksFromOW.push(t));
+            }
+
+            selectedTanksFromOW.forEach(t => {
+              if (!t.tankName && !t.tankId && !t.name) return;
+
+              const qtyRaw = t.finalQuantity ?? t.quantity ?? t.remainingQuantity ?? t.totalCount ?? t.count;
+              if (qtyRaw !== undefined && qtyRaw !== null && Number(qtyRaw) <= 0) return;
+
+              const rawName = String(t.tankName || t.name || t.tankId).trim();
+              const actualTankName = rawName.toLowerCase();
+
+              if (siteTanksMap.has(actualTankName)) {
+                stockedTankNamesFromBills.add(actualTankName);
+                if (!tankStockingTimes[actualTankName] || billTime > tankStockingTimes[actualTankName]) {
+                  tankStockingTimes[actualTankName] = billTime;
+                }
               }
             });
-          } else if (legacyPackData && Array.isArray(legacyPackData.selectedTanks)) {
-            legacyPackData.selectedTanks.forEach(t => selectedTanksFromOW.push(t));
-          }
-
-          selectedTanksFromOW.forEach(t => {
-            if (!t.tankName && !t.tankId) return;
-
-            const qtyRaw = t.finalQuantity ?? t.quantity ?? t.remainingQuantity ?? t.totalCount ?? t.count;
-            if (qtyRaw !== undefined && qtyRaw !== null && Number(qtyRaw) <= 0) return;
-
-            const actualTankName = String(t.tankName || t.tankId).trim().toLowerCase();
-            if (siteTanksMap.has(actualTankName)) {
-              stockedTankNamesFromBills.add(actualTankName);
-              if (!tankStockingTimes[actualTankName] || billTime > tankStockingTimes[actualTankName]) {
-                tankStockingTimes[actualTankName] = billTime;
-              }
-            }
-          });
-
-          // 2. Process Seed Van Plan / Mixed completions from stocking_status_data
-          const sd = bill.stocking_status_data;
-          if (sd && typeof sd === 'object') {
+          } else if (bill.stocking_status_data && typeof bill.stocking_status_data === 'object') {
+            // 2. Process Seed Van Plan / Mixed completions from stocking_status_data
+            const sd = bill.stocking_status_data;
             // Process top-level (legacy flat structure)
             if (sd.tankStates && typeof sd.tankStates === 'object') {
               const aggregated = aggregateTankStates(sd.tankStates, sd.transfers || []);
@@ -149,12 +159,9 @@ export default function TankList() {
                 }
               }
             }
-          }
-
-          // 3. Process Packing completions from selected_tanks
-          if (Array.isArray(bill.selected_tanks)) {
+          } else if (Array.isArray(bill.selected_tanks)) {
+            // 3. Process Packing completions from selected_tanks
             for (const t of bill.selected_tanks) {
-              // If the bill is 'Completed', any tank in selected_tanks with remaining quantity is considered stocked.
               if (Number(t.quantity) > 0) {
                 const actualTankName = String(t.name || '').trim().toLowerCase();
                 if (siteTanksMap.has(actualTankName)) {
@@ -197,17 +204,18 @@ export default function TankList() {
           .select('*');
 
         const repMap = {};
+        const getReportTimestamp = (report) => {
+          if (!report) return 0;
+          return new Date(report.updated_at || report.created_at || report.latest_date || report.process_details?.date || 0).getTime();
+        };
+
         (repData ?? []).forEach((rp) => {
           const existing = repMap[rp.tank_id];
           if (!existing) {
             repMap[rp.tank_id] = rp;
           } else {
-            const existingTime = existing.process_details?.date
-              ? new Date(existing.process_details.date).getTime()
-              : new Date(existing.updated_at || existing.created_at || existing.latest_date || 0).getTime();
-            const rpTime = rp.process_details?.date
-              ? new Date(rp.process_details.date).getTime()
-              : new Date(rp.updated_at || rp.created_at || rp.latest_date || 0).getTime();
+            const existingTime = getReportTimestamp(existing);
+            const rpTime = getReportTimestamp(rp);
             if (rpTime > existingTime) {
               repMap[rp.tank_id] = rp;
             }
@@ -219,45 +227,38 @@ export default function TankList() {
         const pending = stocked.filter((t) => {
           const report = repMap[t.id];
           if (!report) return true; // No report ever — always pending
-
           if (report.process_details?.status === 'draft') return true;
 
-          const reportTime = report.process_details?.date
-            ? new Date(report.process_details.date).getTime()
-            : new Date(report.updated_at || report.created_at || report.latest_date || 0).getTime();
+          const reportTime = getReportTimestamp(report);
           const tName = String(t.name || '').trim().toLowerCase();
           const exactStockingTime = tankStockingTimes[tName];
 
           if (exactStockingTime) {
-            return reportTime < (exactStockingTime - 1000);
+            return reportTime < exactStockingTime;
           }
 
           if (!t.start_date) return false;
-          const startDate = new Date(t.start_date).getTime();
-          return reportTime < startDate;
+          const startTime = new Date(t.start_date).getTime();
+          return reportTime < startTime;
         });
 
         // History tanks: tanks for which a Trail Netting Report was generated for the current cycle
         const completed = combinedSiteTanks.filter((t) => {
           const report = repMap[t.id];
           if (!report) return false;
-
           if (report.process_details?.status === 'draft') return false;
 
-          const reportTime = report.process_details?.date
-            ? new Date(report.process_details.date).getTime()
-            : new Date(report.updated_at || report.created_at || report.latest_date || 0).getTime();
+          const reportTime = getReportTimestamp(report);
           const tName = String(t.name || '').trim().toLowerCase();
           const exactStockingTime = tankStockingTimes[tName];
 
           if (exactStockingTime) {
-            // If report was generated ON OR AFTER the Seed Stocking completion, it belongs to this cycle.
-            return reportTime >= (exactStockingTime - 1000);
+            return reportTime >= exactStockingTime;
           }
 
           if (!t.start_date) return true;
-          const startDate = new Date(t.start_date).getTime();
-          return reportTime >= startDate;
+          const startTime = new Date(t.start_date).getTime();
+          return reportTime >= startTime;
         });
 
         setPendingTanks(pending);

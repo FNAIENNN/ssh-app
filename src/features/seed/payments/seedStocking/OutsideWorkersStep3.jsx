@@ -83,101 +83,139 @@ export default function OutsideWorkersStep3({
   const availableTanks = useMemo(() => {
     const tanksMap = new Map();
 
-    const isMixed = activeOrder?.current_stage === 'mixed-allocation';
-    const includePacking = workSource === 'Packing' || isMixed;
-    const includeSeedVan = workSource !== 'Packing' || isMixed;
+    const isMixed = activeOrder?.type === 'mixed' || activeOrder?.current_stage === 'mixed-allocation' || Boolean(activeOrder?.packing_data && activeOrder?.stocking_status_data);
+    const includePacking = workSource === 'Packing' || isMixed || Boolean(activeOrder?.packing_data?.tanks);
+    const includeSeedVan = workSource !== 'Packing' || isMixed || Boolean(activeOrder?.stocking_status_data || (vehicles && vehicles.length > 0));
 
-    // ── Packing Tanks Normalization ──
-    if (includePacking) {
-      let packingTanks = [];
-      if (activeOrder?.packing_data?.tanks) {
-        packingTanks = activeOrder.packing_data.tanks;
-      } else if (workSource === 'Packing') {
-        packingTanks = activeOrder?.selected_tanks || [];
-      }
+    const stockingData = step2Data || activeOrder?.stocking_status_data;
+    const hasFinalData = Boolean(stockingData);
 
+    // 1. Process persisted Stocking Status Data (if available) for ALL vehicles & sources
+    if (hasFinalData) {
+      Object.entries(stockingData).forEach(([vId, vData]) => {
+        if (vId === 'supervisorName' || vId === 'supervisorPhone' || vId === 'supervisorSignature' || vId === 'seedVanCompleted') return;
+        if (!vData || !vData.tankStates) return;
+
+        const vehicle = vehicles.find(v => v.id === vId);
+        const vehicleNumber = vehicle ? (vehicle.vehicle_number || vehicle.vehicleName || 'Unknown Vehicle') : (vId === 'packing' ? 'Packing Only' : 'Seed Stocking');
+
+        const aggregated = aggregateTankStates(vData.tankStates, vData.transfers);
+
+        aggregated.forEach(agg => {
+          if (!agg || !agg.tankName) return;
+          const normalizedName = agg.tankName.trim().toUpperCase();
+
+          // Final eligibility rules:
+          // Stocking Completed / Partial Transfer / Partial Return / Transfer Target with count > 0 -> ELIGIBLE
+          // Full Return (status = returned, count = 0) or Full Transfer source (status = transferred, count = 0) -> INELIGIBLE
+          const isFullReturn = agg.status === 'returned' && agg.totalCount === 0;
+          const isFullTransferSource = agg.status === 'transferred' && agg.totalCount === 0;
+          const isEligible = !isFullReturn && !isFullTransferSource && (agg.totalCount > 0 || agg.status === 'completed' || agg.status === 'pending' || agg.status === 'Partial Transfer' || agg.status === 'unassigned');
+
+          if (isEligible) {
+            const origTank = vehicle?.selected_tanks?.find(t => String(t.name || '').trim().toUpperCase() === normalizedName) || activeOrder?.selected_tanks?.find(t => String(t.name || '').trim().toUpperCase() === normalizedName);
+
+            tanksMap.set(normalizedName, {
+              vehicleId: vId,
+              vehicleNumber,
+              tankId: origTank ? origTank.id : (agg.targetTankId || agg.tankName),
+              tankName: agg.tankName,
+              finalQuantity: agg.totalCount,
+              status: agg.status,
+              source: 'seed_van'
+            });
+          }
+        });
+      });
+    }
+
+    // 2. Process Packing Tanks
+    if (includePacking && activeOrder?.packing_data?.tanks) {
+      let packingTanks = activeOrder.packing_data.tanks;
       packingTanks.forEach(t => {
-        if (Number(t.quantity) > 0) {
-          tanksMap.set(`packing-${t.id || t.name}`, {
-            vehicleId: 'packing',
-            vehicleNumber: 'Packing Only',
-            tankId: t.id || t.name,
-            tankName: t.name || t.id,
-            finalQuantity: t.quantity
-          });
+        const rawName = String(t.name || t.id || '').trim();
+        if (!rawName) return;
+        const normalizedName = rawName.toUpperCase();
+        const qty = Number(t.quantity) || 0;
+        const status = String(t.status || '');
+
+        const isFullReturn = status.includes('Returned') && qty === 0;
+        const isFullTransferSource = status.includes('Transferred') && qty === 0;
+        const isEligible = !isFullReturn && !isFullTransferSource && (qty > 0 || status === 'Stocking Completed');
+
+        if (isEligible) {
+          if (!tanksMap.has(normalizedName)) {
+            tanksMap.set(normalizedName, {
+              vehicleId: 'packing',
+              vehicleNumber: 'Packing Only',
+              tankId: t.id || rawName,
+              tankName: rawName,
+              finalQuantity: qty,
+              status,
+              source: 'packing'
+            });
+          } else {
+            const existing = tanksMap.get(normalizedName);
+            if (qty > 0 && existing.finalQuantity === 0) {
+              existing.finalQuantity = qty;
+            }
+          }
         }
       });
     }
 
-    // ── Seed Van & Mixed Tanks Normalization ──
-    if (includeSeedVan) {
-      const finalData = step2Data || activeOrder?.stocking_status_data;
-      if (finalData) {
-        Object.entries(finalData).forEach(([vId, vData]) => {
-          if (vId === 'supervisorName' || vId === 'supervisorPhone' || vId === 'supervisorSignature' || vId === 'seedVanCompleted') return;
-          if (!vData || !vData.tankStates) return;
+    // 3. Fallback for Seed Van only when NO final transaction data exists
+    if (includeSeedVan && !hasFinalData && !activeOrder?.packing_data?.tanks) {
+      vehicles.forEach(v => {
+        if (v.selected_tanks && Array.isArray(v.selected_tanks)) {
+          v.selected_tanks.forEach(t => {
+            const rawName = String(t.name || t.id || '').trim();
+            if (!rawName) return;
+            const normalizedName = rawName.toUpperCase();
+            const qty = t.quantity === undefined ? null : Number(t.quantity);
 
-          const vehicle = vehicles.find(v => v.id === vId);
-          const vehicleNumber = vehicle?.vehicle_number || vehicle?.vehicleName || 'Unknown Vehicle';
-
-          const aggregated = aggregateTankStates(vData.tankStates, vData.transfers);
-
-          aggregated.forEach(agg => {
-            if (agg.totalCount > 0) {
-              const origTank = vehicle?.selected_tanks?.find(t => t.name === agg.tankName);
-              tanksMap.set(`${vId}-${agg.tankName}`, {
-                vehicleId: vId,
-                vehicleNumber,
-                tankId: origTank ? origTank.id : (agg.targetTankId || agg.tankName),
-                tankName: agg.tankName,
-                finalQuantity: agg.totalCount
+            if (!tanksMap.has(normalizedName) && (qty === null || qty > 0)) {
+              tanksMap.set(normalizedName, {
+                vehicleId: v.id,
+                vehicleNumber: v.vehicle_number || v.vehicleName || 'Unknown Vehicle',
+                tankId: t.id,
+                tankName: rawName,
+                finalQuantity: qty
               });
             }
           });
-        });
-      }
+        }
+      });
     }
 
     const tanks = Array.from(tanksMap.values());
 
-    const hasFinalData = Boolean(step2Data || activeOrder?.stocking_status_data);
-
-    if (includeSeedVan && !hasFinalData) {
-      vehicles.forEach(v => {
-        if (v.selected_tanks && Array.isArray(v.selected_tanks)) {
-          v.selected_tanks.forEach(t => {
-            if (t.quantity === undefined || Number(t.quantity) > 0) {
-              if (!tanks.find(ex => ex.vehicleId === v.id && ex.tankName === t.name)) {
-                tanks.push({
-                  vehicleId: v.id,
-                  vehicleNumber: v.vehicle_number || v.vehicleName || 'Unknown Vehicle',
-                  tankId: t.id,
-                  tankName: t.name,
-                  finalQuantity: null
-                });
-              }
-            }
-          });
-        }
-      });
-    }
+    // Filter out tanks already used in other saved batches (deduplicated by normalized physical tank name)
     const usedByOther = new Set();
     savedBatches.forEach(b => {
       if (b.batchId !== editingBatchId && b.selectedTanks) {
         b.selectedTanks.forEach(st => {
-          usedByOther.add(`${st.vehicleId}-${st.tankId}`);
+          const tKey = String(st.tankName || st.name || st.tankId || '').trim().toUpperCase();
+          if (tKey) usedByOther.add(tKey);
         });
       }
     });
 
-    return tanks.filter(t => !usedByOther.has(`${t.vehicleId}-${t.tankId}`));
-  }, [vehicles, step2Data, activeOrder, savedBatches, editingBatchId]);
+    return tanks.filter(t => !usedByOther.has(String(t.tankName).trim().toUpperCase()));
+  }, [vehicles, step2Data, activeOrder, savedBatches, editingBatchId, workSource]);
 
   function handleTankToggle(tankOpt) {
+    const normOptName = String(tankOpt.tankName || tankOpt.name || tankOpt.tankId).trim().toUpperCase();
     setSelectedTanks((prev) => {
-      const exists = prev.find(p => p.vehicleId === tankOpt.vehicleId && p.tankId === tankOpt.tankId);
+      const exists = prev.find(p =>
+        String(p.tankName || p.name || p.tankId).trim().toUpperCase() === normOptName ||
+        (p.vehicleId === tankOpt.vehicleId && p.tankId === tankOpt.tankId)
+      );
       if (exists) {
-        return prev.filter(p => !(p.vehicleId === tankOpt.vehicleId && p.tankId === tankOpt.tankId));
+        return prev.filter(p =>
+          String(p.tankName || p.name || p.tankId).trim().toUpperCase() !== normOptName &&
+          !(p.vehicleId === tankOpt.vehicleId && p.tankId === tankOpt.tankId)
+        );
       } else {
         return [...prev, tankOpt];
       }
@@ -728,7 +766,11 @@ export default function OutsideWorkersStep3({
             {availableTanks.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                 {availableTanks.map((tOpt, idx) => {
-                  const isSelected = selectedTanks.some(st => st.vehicleId === tOpt.vehicleId && st.tankId === tOpt.tankId);
+                  const normOptName = String(tOpt.tankName || tOpt.name || tOpt.tankId).trim().toUpperCase();
+                  const isSelected = selectedTanks.some(st =>
+                    String(st.tankName || st.name || st.tankId).trim().toUpperCase() === normOptName ||
+                    (st.vehicleId === tOpt.vehicleId && st.tankId === tOpt.tankId)
+                  );
                   return (
                     <button
                       key={`${tOpt.vehicleId}-${tOpt.tankId}-${idx}`}

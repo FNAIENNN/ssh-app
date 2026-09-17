@@ -568,11 +568,17 @@ export default function BillDetailsReadOnly({
       return;
     }
     try {
+      const updatedDocData = {
+        ...(bill.document_data || {}),
+        finance_status: 'returned'
+      };
+
       const { error } = await supabase
         .from(TABLES.bills)
         .update({
           finance_status: 'returned',
-          refund_bank_account_id: refundBankAccount
+          refund_bank_account_id: refundBankAccount,
+          document_data: updatedDocData
         })
         .eq('id', bill.id);
 

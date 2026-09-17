@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
 import { useAuth } from '../../../../hooks/useAuth';
 import { useToast } from '../../../../hooks/useToast';
@@ -12,6 +12,7 @@ import PackingPage from '../packing/PackingPage';
 import PackingOutsideWorkers from '../packing/PackingOutsideWorkers';
 import MixedAllocation from './MixedAllocation';
 import { useMixedAllocationState } from './useMixedAllocationState';
+import { getAssignedVehicleIds } from './stockingUtils';
 
 export default function SeedStocking({ siteId, stockingOrder = null, onStockingCompleted = null }) {
   const { user } = useAuth();
@@ -62,11 +63,21 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
   // Workflow Step State: 1 | 2 | 3 | 'completed'
   const [step, setStep] = useState(1);
-  const [showMixedConfirm, setShowMixedConfirm] = useState(false);
+
 
 
   const [step1Data, setStep1Data] = useState(() => activeOrder?.van_plan || null);
   const [step2Data, setStep2Data] = useState(() => activeOrder?.stocking_status_data || null);
+
+  const assignedVehicleIds = useMemo(() => {
+    return getAssignedVehicleIds(activeOrder, step1Data, step2Data, null, vehicles);
+  }, [activeOrder, step1Data, step2Data, vehicles]);
+
+  const { vanPlanVehicleIds, packingVehicleIds } = assignedVehicleIds;
+
+  const vehiclesForVanPlan = useMemo(() => {
+    return vehicles.filter(v => !packingVehicleIds.has(String(v.id)));
+  }, [vehicles, packingVehicleIds]);
 
   useEffect(() => {
     if (activeOrder) {
@@ -186,13 +197,22 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
         'Seed Van Plan Saved',
         user?.email
       );
+      activeOrder.van_plan = newData;
     }
     toast.success('Seed Van Plan saved for selected vehicle.');
 
-    // Automatically select the next unsaved vehicle to improve workflow
-    const nextUnsaved = vehicles.find(v => !newData[v.id]);
-    if (nextUnsaved) {
-      setSelectedVehicleId(nextUnsaved.id);
+    // Automatically select the next unassigned vehicle to improve workflow ONLY if not in mixed mode
+    if (!isMixed) {
+      const updatedVanPlanIds = new Set([...vanPlanVehicleIds, String(vehicleId)]);
+      const nextUnsaved = vehicles.find(v => {
+        const vId = String(v.id);
+        return !updatedVanPlanIds.has(vId) && !packingVehicleIds.has(vId);
+      });
+      if (nextUnsaved) {
+        setSelectedVehicleId(nextUnsaved.id);
+      } else {
+        setSelectedVehicleId('');
+      }
     }
   }
 
@@ -286,6 +306,30 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
           Object.assign(allTankStates, value.tankStates);
         }
       }
+    }
+
+    // Include tanks explicitly selected in Outside Workers (step3Data)
+    const owBatches = step3Data?.batches || [];
+    if (owBatches.length > 0) {
+      owBatches.forEach(b => {
+        if (Array.isArray(b.selectedTanks)) {
+          b.selectedTanks.forEach(st => {
+            const tName = String(st.tankName || st.name || st.tankId || '').trim();
+            const qty = Number(st.finalQuantity ?? st.quantity ?? 1);
+            if (tName && qty > 0) {
+              const normKey = tName.toLowerCase();
+              const existingKey = Object.keys(allTankStates).find(k => k.toLowerCase() === normKey);
+              if (!existingKey) {
+                allTankStates[tName] = {
+                  tankName: tName,
+                  status: 'completed',
+                  currentCount: qty
+                };
+              }
+            }
+          });
+        }
+      });
     }
 
     if (Object.keys(allTankStates).length > 0) {
@@ -1000,11 +1044,16 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
                 onChange={(e) => setSelectedVehicleId(e.target.value)}
               >
                 <option value="">-- Select a Vehicle --</option>
-                {vehicles.map((v, i) => (
-                  <option key={v.id} value={v.id}>
-                    Vehicle {i + 1} · {v.vehicle_no || 'No Reg'}
-                  </option>
-                ))}
+                {vehiclesForVanPlan.map((v) => {
+                  const originalIndex = vehicles.findIndex(orig => String(orig.id) === String(v.id));
+                  const vehicleLabel = `Vehicle ${originalIndex >= 0 ? originalIndex + 1 : ''} · ${v.vehicle_no || v.vehicleNo || 'No Reg'}`;
+                  const isSaved = vanPlanVehicleIds.has(String(v.id));
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {vehicleLabel} {isSaved ? '✓ Saved' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
           )}
@@ -1055,15 +1104,11 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               ) : (
                 <div className="text-sm font-bold text-text-muted mt-4">Please select a vehicle above to begin.</div>
               )}
-              {vehicles.length > 0 && (mixedState.isMixed ? Object.keys(step1Data || {}).length > 0 : vehicles.every(v => !!step1Data?.[v.id])) && (
+              {vehiclesForVanPlan.length > 0 && (mixedState.isMixed ? Object.keys(step1Data || {}).length > 0 : vehiclesForVanPlan.every(v => !!step1Data?.[v.id])) && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (mixedState.isMixed && vehicles.some(v => !step1Data?.[v.id])) {
-                      setShowMixedConfirm(true);
-                    } else {
-                      setStep(2);
-                    }
+                    setStep(2);
                   }}
                   className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
                 >
@@ -1074,40 +1119,6 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             </div>
           )}
 
-          {/* Mixed Confirm Modal */}
-          {showMixedConfirm && (
-            <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
-                <h3 className="font-extrabold text-lg text-slate-800">Unconfigured Vehicle</h3>
-                <p className="text-sm text-slate-600 font-semibold">
-                  Another vehicle is still not configured. Do you want to configure it now?
-                </p>
-                <div className="flex flex-col gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMixedConfirm(false);
-                      const unconfigured = vehicles.find(v => !step1Data?.[v.id]);
-                      if (unconfigured) setSelectedVehicleId(unconfigured.id);
-                    }}
-                    className="btn-primary py-2.5 font-bold rounded-[8px]"
-                  >
-                    Yes, Configure Vehicle
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowMixedConfirm(false);
-                      setStep(2);
-                    }}
-                    className="btn-ghost py-2.5 font-bold rounded-[8px] border border-slate-300 hover:bg-slate-50 text-slate-700"
-                  >
-                    No, Continue
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Render Step 2: Stocking Status */}
           {seedMode !== 'packing' && seedMode !== 'outside-workers-packing' && seedMode !== 'outside-workers' && seedMode !== 'mixed-allocation' && step === 2 && activeOrder && (
@@ -1115,7 +1126,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               <button onClick={() => setStep(1)} className="text-sm font-bold text-text-muted hover:text-black flex items-center gap-1">← Back</button>
               {loadingVehicles ? (
                 <p className="text-xs text-text-muted mt-2">Loading vehicles…</p>
-              ) : vehicles.filter((v) => !!step1Data?.[v.id]).length === 0 ? (
+              ) : vehiclesForVanPlan.filter((v) => !!step1Data?.[v.id]).length === 0 ? (
                 <div className="mt-2 p-3 rounded bg-amber-50 text-amber-800 text-xs font-bold border border-amber-200">
                   No vehicles with a saved Seed Van Plan available. Please complete Seed Van Plan first.
                 </div>
@@ -1136,7 +1147,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               )}
 
               {/* Common Supervisor Details (Appears only after all vehicles are saved) */}
-              {vehicles.length > 0 && vehicles.every(v => !!step2Data?.[v.id]) && (
+              {vehiclesForVanPlan.length > 0 && vehiclesForVanPlan.every(v => !!step2Data?.[v.id]) && (
                 <div className="card p-6 border shadow-sm mt-6">
                   <h4 className="font-extrabold text-lg text-primary border-b pb-2 mb-4">✍️ Common Supervisor Sign-off</h4>
                   <div className="space-y-4">

@@ -37,7 +37,7 @@ export default function Payments() {
 
 function PaymentsInner({ siteId }) {
   const { seedMode, setSeedMode, loadBills, activeBill, allBills, updateBill } = useSeedBill();
-  const { user } = useAuth();
+  const { user } = useAuth()
 
   // Determine which high-level tab is active based on seedMode
   const activeTab =
