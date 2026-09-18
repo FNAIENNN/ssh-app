@@ -210,8 +210,6 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
       });
       if (nextUnsaved) {
         setSelectedVehicleId(nextUnsaved.id);
-      } else {
-        setSelectedVehicleId('');
       }
     }
   }
@@ -1109,6 +1107,9 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
                   type="button"
                   onClick={() => {
                     setStep(2);
+                    if (vehiclesForVanPlan.length > 0) {
+                      setSelectedVehicleId(vehiclesForVanPlan[0].id);
+                    }
                   }}
                   className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
                 >

@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase, TABLES } from '../../lib/supabaseClient';
@@ -21,6 +20,7 @@ export default function TankList() {
   const [completedTanks, setCompletedTanks] = useState([]);
   const [records, setRecords] = useState({}); // tankId -> records[]
   const [reports, setReports] = useState({}); // tankId -> latest report
+  const [stockingTimes, setStockingTimes] = useState({}); // normalizedTankName -> latest billTime
   const [loading, setLoading] = useState(true);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -125,7 +125,7 @@ export default function TankList() {
             if (sd.tankStates && typeof sd.tankStates === 'object') {
               const aggregated = aggregateTankStates(sd.tankStates, sd.transfers || []);
               for (const agg of aggregated) {
-                if (agg.status === 'completed' && agg.totalCount > 0) {
+                if ((agg.status === 'completed' || agg.status === 'pending') && agg.totalCount > 0) {
                   const actualTankName = String(agg.tankName).trim().toLowerCase();
                   if (siteTanksMap.has(actualTankName)) {
                     stockedTankNamesFromBills.add(actualTankName);
@@ -147,7 +147,7 @@ export default function TankList() {
               ) {
                 const aggregated = aggregateTankStates(value.tankStates, value.transfers || []);
                 for (const agg of aggregated) {
-                  if (agg.status === 'completed' && agg.totalCount > 0) {
+                  if ((agg.status === 'completed' || agg.status === 'pending') && agg.totalCount > 0) {
                     const actualTankName = String(agg.tankName).trim().toLowerCase();
                     if (siteTanksMap.has(actualTankName)) {
                       stockedTankNamesFromBills.add(actualTankName);
@@ -263,6 +263,7 @@ export default function TankList() {
 
         setPendingTanks(pending);
         setCompletedTanks(completed);
+        setStockingTimes(tankStockingTimes);
       } catch (err) {
         console.error("TankList Data Fetch Error:", err);
       } finally {
@@ -327,8 +328,8 @@ export default function TankList() {
         <button
           onClick={() => setActiveTab('active')}
           className={`flex-1 py-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'active'
-              ? 'bg-slate-900 text-white shadow-md'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            ? 'bg-slate-900 text-white shadow-md'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
         >
           <span>🌊 Active / Pending Tanks</span>
@@ -343,8 +344,8 @@ export default function TankList() {
         <button
           onClick={() => setActiveTab('history')}
           className={`flex-1 py-3 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'history'
-              ? 'bg-slate-900 text-white shadow-md'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+            ? 'bg-slate-900 text-white shadow-md'
+            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
         >
           <span>📜 History</span>
@@ -366,8 +367,8 @@ export default function TankList() {
           <button
             onClick={() => handleSectionSelect('all')}
             className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 ${activeSectionId === 'all'
-                ? 'bg-slate-900 text-white shadow-md'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+              ? 'bg-slate-900 text-white shadow-md'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
               }`}
           >
             <span>All Sections</span>
@@ -386,8 +387,8 @@ export default function TankList() {
                 key={sec.id}
                 onClick={() => handleSectionSelect(sec.id)}
                 className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 ${isActive
-                    ? 'bg-slate-900 text-white shadow-md'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  ? 'bg-slate-900 text-white shadow-md'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
               >
                 <span>Section {sec.name}</span>
@@ -429,30 +430,40 @@ export default function TankList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {sectionTanks.map((t) => {
-            const tankRecords = records[t.id] ?? [];
-            const cadence = computeCadence({ startDate: t.start_date, records: tankRecords });
+            const allTankRecords = records[t.id] ?? [];
             const latestReport = reports[t.id];
 
-            const lastRec = tankRecords[tankRecords.length - 1];
-            const latestCountVal = lastRec?.final_count || latestReport?.latest_count || '—';
-            const latestCountDate = lastRec?.date
-              ? formatDate(lastRec.date)
-              : latestReport?.latest_date
-                ? formatDate(latestReport.latest_date)
-                : t.start_date
-                  ? formatDate(t.start_date)
-                  : '—';
-
             if (activeTab === 'history') {
+              const cadence = computeCadence({ startDate: t.start_date, records: allTankRecords });
               return (
                 <HistoryTankCardTN
                   key={t.id}
                   tank={t}
                   report={latestReport}
-                  recordsList={tankRecords}
-                  onViewReport={() => setSelectedHistoryItem({ tank: t, report: latestReport, recordsList: tankRecords })}
+                  recordsList={allTankRecords}
+                  onViewReport={() => setSelectedHistoryItem({ tank: t, report: latestReport, recordsList: allTankRecords })}
                 />
               );
+            }
+
+            // For Active/Pending Tab: Filter records for the CURRENT cycle only
+            const tName = String(t.name || '').trim().toLowerCase();
+            const exactStockingTime = stockingTimes[tName];
+            const cycleStartTime = exactStockingTime || (t.start_date ? new Date(t.start_date).getTime() : 0);
+
+            const currentCycleRecords = allTankRecords.filter(r => new Date(r.date).getTime() >= cycleStartTime);
+            const cadence = computeCadence({ startDate: t.start_date, records: currentCycleRecords });
+
+            const lastRec = currentCycleRecords[currentCycleRecords.length - 1];
+            const latestCountVal = lastRec?.final_count || '—';
+
+            let latestCountDate = '—';
+            if (lastRec?.date) {
+              latestCountDate = formatDate(lastRec.date);
+            } else if (exactStockingTime) {
+              latestCountDate = formatDate(new Date(exactStockingTime).toISOString());
+            } else if (t.start_date) {
+              latestCountDate = formatDate(t.start_date);
             }
 
             return (
@@ -462,7 +473,7 @@ export default function TankList() {
                 cadence={cadence}
                 latestCount={latestCountVal}
                 latestCountDate={latestCountDate}
-                nettingCount={tankRecords.length}
+                nettingCount={currentCycleRecords.length}
                 onNet={() => navigate(`/app/trail-netting/${t.id}/checklist`)}
               />
             );

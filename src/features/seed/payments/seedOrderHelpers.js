@@ -2,9 +2,11 @@ export function isOrderFullyCompleted(order) {
   if (!order) return false;
 
   // Core explicit final flag check
-  const hasFinalFlag = order.status === 'Completed';
+  if (order.status === 'Completed' || order.stocking_status === 'completed') {
+    return true;
+  }
 
-  // Check path-specific data persistence to prove true completion
+  // Fallback: Check path-specific data persistence for legacy or edge cases
   const hasPacking = !!order.packing_data?.packingCompleted;
   const hasVanPlan = !!order.van_plan;
   const hasStocking = !!order.stocking_status_data;
@@ -14,15 +16,15 @@ export function isOrderFullyCompleted(order) {
   const isMixed = order.current_stage === 'mixed-allocation' || (hasPacking && hasVanPlan);
 
   if (isMixed) {
-    return hasFinalFlag && hasPacking && hasVanPlan && hasStocking && hasSupervisor && hasOutsideWorkers;
+    return hasPacking && hasVanPlan && hasStocking && hasSupervisor && hasOutsideWorkers;
   }
   
   if (hasPacking) {
-    return hasFinalFlag && hasOutsideWorkers;
+    return hasOutsideWorkers;
   }
   
   if (hasVanPlan) {
-    return hasFinalFlag && hasStocking && hasSupervisor && hasOutsideWorkers;
+    return hasStocking && hasSupervisor && hasOutsideWorkers;
   }
 
   // If no path is started or recognized, it's definitely not complete
