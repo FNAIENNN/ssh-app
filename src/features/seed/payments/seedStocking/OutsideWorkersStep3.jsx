@@ -136,12 +136,16 @@ export default function OutsideWorkersStep3({
         const rawName = String(t.name || t.id || '').trim();
         if (!rawName) return;
         const normalizedName = rawName.toUpperCase();
-        const qty = Number(t.quantity) || 0;
+        const originalQty = Number(t.quantity) || 0;
+        const returnedQty = Number(t.returnedQuantity) || 0;
+        const transferredQty = Number(t.transferredQuantity) || 0;
+        const finalQty = Math.max(0, originalQty - returnedQty - transferredQty);
+        
         const status = String(t.status || '');
 
-        const isFullReturn = status.includes('Returned') && qty === 0;
-        const isFullTransferSource = status.includes('Transferred') && qty === 0;
-        const isEligible = !isFullReturn && !isFullTransferSource && (qty > 0 || status === 'Stocking Completed');
+        const isFullReturn = status.includes('Returned') && finalQty === 0;
+        const isFullTransferSource = status.includes('Transferred') && finalQty === 0;
+        const isEligible = !isFullReturn && !isFullTransferSource && (finalQty > 0 || status === 'Stocking Completed');
 
         if (isEligible) {
           if (!tanksMap.has(normalizedName)) {
@@ -150,14 +154,14 @@ export default function OutsideWorkersStep3({
               vehicleNumber: 'Packing Only',
               tankId: t.id || rawName,
               tankName: rawName,
-              finalQuantity: qty,
+              finalQuantity: finalQty,
               status,
               source: 'packing'
             });
           } else {
             const existing = tanksMap.get(normalizedName);
-            if (qty > 0 && existing.finalQuantity === 0) {
-              existing.finalQuantity = qty;
+            if (finalQty > 0 && existing.finalQuantity === 0) {
+              existing.finalQuantity = finalQty;
             }
           }
         }

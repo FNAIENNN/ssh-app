@@ -1210,7 +1210,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             <div className="mt-6">
               <OutsideWorkersStep3
                 initialSupervisorName={commonSupervisorName}
-                onComplete={() => setSeedMode('history')}
+                onComplete={handleFinalComplete}
                 onBack={() => mixedState.isMixed ? setSeedMode('mixed-allocation') : setSeedMode('list')}
                 vehicles={vehicles}
                 activeOrder={activeOrder}
