@@ -6,7 +6,7 @@ import PackingSelection from './PackingSelection';
 import PackingSummary from './PackingSummary';
 import { aggregateTankStates } from '../seedStocking/stockingUtils';
 
-export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehicles = [], onGoToHistory, onBack }) {
+export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehicles = [], onGoToHistory, onBack, detectedActiveTanks, onProceedToReview }) {
   const toast = useToast();
   // Master state preserving all details throughout the steps
   const [tanks, setTanks] = useState(() => {
@@ -160,16 +160,47 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
         <button
           type="button"
           onClick={() => step > 1 ? setStep(step - 1) : onBack()}
-          className="flex items-center gap-1 text-sm font-bold"
+          className="hidden sm:flex items-center gap-1 text-sm font-bold"
           style={{ color: '#000', background: 'none', border: 'none', cursor: 'pointer' }}
           disabled={isSaving}
         >
           <span style={{ fontSize: '1.1rem' }}>←</span>
           <span>Back</span>
         </button>
-        <span className="text-xs font-bold text-text-muted uppercase tracking-wider">
-          Packing Flow (Step {step}/3)
-        </span>
+        <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm overflow-x-auto w-full">
+          <div className="flex items-center gap-2 min-w-max">
+            {[
+              { id: 1, label: '1. Details', icon: '📦' },
+              { id: 2, label: '2. Selection', icon: '🗳️' },
+              { id: 3, label: '3. Summary', icon: '📋' },
+            ].map((stepObj) => {
+              const isActive = step === stepObj.id;
+              const isCompleted = stepObj.id < step;
+              const isEnabled = stepObj.id <= step;
+
+              return (
+                <button
+                  key={stepObj.id}
+                  type="button"
+                  disabled={!isEnabled}
+                  onClick={() => isEnabled && setStep(stepObj.id)}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : isCompleted
+                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer'
+                        : isEnabled
+                          ? 'text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 cursor-pointer'
+                          : 'text-slate-400 bg-slate-50/50 cursor-not-allowed opacity-60 border border-transparent'
+                    }`}
+                >
+                  <span>{isCompleted ? '✓' : stepObj.icon}</span>
+                  <span>{stepObj.label}</span>
+                  {!isEnabled && <span className="text-[10px]">🔒</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {step === 1 && (
@@ -199,6 +230,8 @@ export default function PackingPage({ initialTanks, tankQtys, activeOrder, vehic
             vehicles={vehicles}
             activeOrder={activeOrder}
             onGoToHistory={handleComplete}
+            detectedActiveTanks={detectedActiveTanks}
+            onProceedToReview={onProceedToReview}
           />
         </div>
       )}

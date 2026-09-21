@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { getAssignedVehicleIds } from '../seedStocking/stockingUtils';
+import { getAssignedVehicleIds, vehicleHasTank } from '../seedStocking/stockingUtils';
 import { supabase, TABLES } from '../../../../lib/supabaseClient';
 import { useAuth } from '../../../../hooks/useAuth';
 import { autosaveBillStep } from '../../../../lib/bills';
@@ -13,14 +13,10 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
       activeOrder.packing_data.savedVehicleIds.forEach(id => initialSet.add(String(id)));
     }
     if (Array.isArray(activeOrder?.packing_data?.tanks) && activeOrder.packing_data.tanks.length > 0 && Array.isArray(vehicles)) {
-      const configuredTankIds = new Set(
-        activeOrder.packing_data.tanks
-          .filter(pt => Number(pt.quantity) > 0 || Number(pt.numberOfPackets) > 0)
-          .map(pt => String(pt.id))
-      );
+      const configuredTanks = activeOrder.packing_data.tanks
+        .filter(pt => Number(pt.quantity) > 0 || Number(pt.numberOfPackets) > 0);
       vehicles.forEach(v => {
-        const tids = (v.tank_ids || v.selectedTanks || []).map(String);
-        if (tids.some(tid => configuredTankIds.has(tid))) {
+        if (configuredTanks.some(tank => vehicleHasTank(v, tank))) {
           initialSet.add(String(v.id));
         }
       });
@@ -65,8 +61,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
 
   const handleSaveVehicle = async () => {
     if (!selectedVehicle) return;
-    const tids = (selectedVehicle.tank_ids || selectedVehicle.selectedTanks || []).map(String);
-    const vTanks = tanks.filter(t => tids.includes(String(t.id)));
+    const vTanks = tanks.filter(t => vehicleHasTank(selectedVehicle, t));
     const isMixedMode = activeOrder?.current_stage === 'mixed-allocation';
 
     const missingQty = vTanks.some(t => {
@@ -165,11 +160,10 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
   // Find all assigned tank IDs to see if there are unassigned ones
   const assignedTankIds = new Set();
   vehicles.forEach(v => {
-    const tids = v.tank_ids || v.selectedTanks || [];
-    tids.forEach(tid => assignedTankIds.add(tid));
+    tanks.filter(t => vehicleHasTank(v, t)).forEach(t => assignedTankIds.add(String(t.id)));
   });
 
-  const unassignedTanks = tanks.filter(t => !assignedTankIds.has(t.id));
+  const unassignedTanks = tanks.filter(t => !assignedTankIds.has(String(t.id)));
 
   const renderTankTable = (tankList) => (
     <div className="overflow-x-auto rounded-[8px] border" style={{ borderColor: 'var(--color-border)' }}>
@@ -249,8 +243,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
       {selectedVehicle && (() => {
         const v = selectedVehicle;
         const i = selectedIndex;
-        const tids = v.tank_ids || v.selectedTanks || [];
-        const vTanks = tanks.filter(t => tids.includes(t.id));
+        const vTanks = tanks.filter(t => vehicleHasTank(v, t));
         const isSaved = savedVehicles.has(String(v.id));
 
         return (
@@ -276,7 +269,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
               <button
                 type="button"
                 onClick={handleSaveVehicle}
-                className="btn-primary text-xs py-2 px-4 font-bold"
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm py-2 sm:py-2.5 px-4 sm:px-5 rounded-[8px] font-bold shadow-sm transition-colors"
               >
                 {isSaved ? 'Update Saved Details' : 'Save Vehicle Details'}
               </button>
@@ -327,7 +320,7 @@ export default function PackingDetails({ tanks, setTanks, vehicles = [], activeO
                   const unconfigured = availablePackingVehicles.find(v => !savedVehicles.has(String(v.id)));
                   if (unconfigured) setSelectedVehicleId(unconfigured.id);
                 }}
-                className="btn-primary py-2.5 font-bold rounded-[8px]"
+                className="bg-slate-900 text-white hover:bg-slate-800 py-2.5 font-bold rounded-[8px]"
               >
                 Yes, Configure Vehicle
               </button>

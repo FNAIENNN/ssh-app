@@ -621,35 +621,34 @@ export default function BillDetailsReadOnly({
     const returnType = remainingQty === 0 || remainingQty === '0' ? 'Full' : 'Partial';
 
     return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="flex items-center gap-1.5 text-sm font-bold"
-              style={{ color: '#000', background: 'none', border: 'none', cursor: 'pointer' }}
+              className="flex items-center gap-1.5 text-sm font-bold text-slate-800 hover:text-black transition-colors self-start"
             >
-              <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
-              <span style={{ color: '#000' }}>Back</span>
+              <span className="text-lg leading-none">←</span>
+              <span>Back</span>
             </button>
           )}
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-800">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <span className="hidden sm:inline-block text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
               🔒 Read-Only Return
             </span>
           </div>
         </div>
 
-        <div ref={detailRef} className="space-y-6 pb-20 p-2 bg-white">
-          <div className="rounded-[16px] px-6 py-5 flex items-center justify-between shadow-md text-white bg-slate-800">
-            <div className="space-y-1">
-              <span className="text-xs uppercase tracking-wider font-semibold text-white/80">Return Bill</span>
-              <h2 className="text-3xl font-extrabold">{bill.bill_number || '—'}</h2>
+        <div ref={detailRef} className="space-y-4 sm:space-y-6 pb-20 p-0 sm:p-2 bg-transparent sm:bg-white rounded-none sm:rounded-2xl">
+          <div className="rounded-2xl p-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md text-white bg-slate-800 overflow-hidden">
+            <div className="space-y-1 w-full sm:w-auto break-words">
+              <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-white/80 block break-words">Return Bill</span>
+              <h2 className="text-xl sm:text-3xl font-extrabold break-words">{bill.bill_number || '—'}</h2>
             </div>
-            <div className="text-right">
-              <span className="text-xs uppercase tracking-wider font-semibold text-white/80 block">Return Date</span>
-              <p className="text-lg font-extrabold text-white">
+            <div className="text-left sm:text-right w-full sm:w-auto border-t sm:border-0 border-white/20 pt-3 sm:pt-0">
+              <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-white/80 block">Return Date</span>
+              <p className="text-lg sm:text-xl font-extrabold text-white">
                 {bill.created_at ? new Date(bill.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
               </p>
             </div>
@@ -730,64 +729,61 @@ export default function BillDetailsReadOnly({
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="flex items-center gap-1.5 text-sm font-bold"
-            style={{ color: '#000', background: 'none', border: 'none', cursor: 'pointer' }}
+            className="flex items-center gap-1.5 text-sm font-bold text-slate-800 hover:text-black transition-colors self-start"
           >
-            <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
-            <span style={{ color: '#000' }}>Back</span>
+            <span className="text-lg leading-none">←</span>
+            <span>Back</span>
           </button>
         )}
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto">
           {showExport && (
             <>
               <button
                 type="button"
                 onClick={handleDownloadPDF}
                 disabled={exporting}
-                className="btn-primary text-xs px-3 py-1.5 font-bold flex items-center gap-1"
+                className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs px-3 py-1.5 font-bold flex items-center gap-1.5 rounded-[8px] shadow-sm transition-colors"
               >
-                📄 PDF
+                <span>📄</span> PDF
               </button>
               <button
                 type="button"
                 onClick={handleDownloadImage}
                 disabled={exporting}
-                className="btn-ghost text-xs px-3 py-1.5 font-bold flex items-center gap-1 border rounded-[8px]"
-                style={{ borderColor: 'var(--color-border)', color: '#000000' }}
+                className="hidden sm:flex bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs px-3 py-1.5 font-bold items-center gap-1.5 rounded-[8px] shadow-sm transition-colors"
               >
-                🖼️ <span style={{ color: '#000000' }}>Image</span>
+                <span>🖼️</span> Image
               </button>
             </>
           )}
-          <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-800">
+          <span className="hidden sm:inline-block text-xs font-bold px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
             🔒 Read-Only
           </span>
         </div>
       </div>
 
-      <div ref={detailRef} className="space-y-6">
+      <div ref={detailRef} className="space-y-4 sm:space-y-6">
         {/* ── Bill Banner ── */}
         <div
-          className="rounded-[16px] px-6 py-5 flex items-center justify-between shadow-md text-white"
+          className="rounded-2xl p-4 sm:px-6 sm:py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md text-white overflow-hidden"
           style={{
             background: isCompleted
               ? 'linear-gradient(135deg,#059669 0%,#10b981 100%)'
               : 'linear-gradient(135deg,var(--color-primary) 0%,var(--color-primary-light) 100%)',
           }}
         >
-          <div className="space-y-1">
-            <span className="text-xs uppercase tracking-wider font-semibold text-white/80">
+          <div className="space-y-1 w-full sm:w-auto break-words">
+            <span className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-white/80 block break-words">
               {isCompleted ? '✓ Completed Seed Order Bill' : 'Seed Order Bill'}
             </span>
-            <h2 className="text-3xl font-extrabold">{bill.bill_number}</h2>
-            <p className="text-xs text-white/90">
+            <h2 className="text-xl sm:text-3xl font-extrabold break-words">{bill.bill_number}</h2>
+            <p className="text-[10px] sm:text-xs text-white/90">
               Created: {new Date(bill.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </p>
           </div>

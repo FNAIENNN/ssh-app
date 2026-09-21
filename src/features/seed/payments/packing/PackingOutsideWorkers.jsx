@@ -354,7 +354,7 @@ export default function PackingOutsideWorkers({
         </div>
       </div>
 
-      <div className="card p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
+      <div className="card p-4 sm:p-6 space-y-4 sm:space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
 
         <h4 className="font-extrabold text-lg text-primary border-b pb-2">1. Supplier Details</h4>
         {supplierSectionUI}

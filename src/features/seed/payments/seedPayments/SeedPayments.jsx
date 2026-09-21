@@ -445,7 +445,7 @@ export default function SeedPayments({ siteId, resumeBill, onResumeCleared, onPr
 
         {/* Read-Only Banner Header */}
         <div
-          className="rounded-[16px] px-6 py-5 flex items-center justify-between shadow-md text-white"
+          className="rounded-[16px] px-4 sm:px-6 py-4 sm:py-5 flex flex-col sm:flex-row sm:items-center justify-between shadow-md text-white gap-4 sm:gap-0"
           style={{
             background: isCompleted
               ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
@@ -470,9 +470,9 @@ export default function SeedPayments({ siteId, resumeBill, onResumeCleared, onPr
         </div>
 
         {/* 1. Seed Order Details */}
-        <div className="card p-5 space-y-3 border">
+        <div className="card p-4 sm:p-5 space-y-3 border">
           <h3 className="font-extrabold text-base border-b pb-2">📋 1. Seed Order Details</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
             <div>
               <p className="text-text-muted">Hatchery Name</p>
               <p className="font-bold text-sm text-primary">{readOnlyBill.hatchery || 'N/A'}</p>
@@ -765,7 +765,7 @@ export default function SeedPayments({ siteId, resumeBill, onResumeCleared, onPr
           <span className="text-xs font-bold text-text-muted">Create Seed Order</span>
         </div>
 
-        <div className="card p-5 space-y-4">
+        <div className="card p-4 sm:p-5 space-y-3 sm:space-y-4">
           <h3 className="font-bold text-lg">Seed Order Details</h3>
 
           {/* Sections — multi-select */}
@@ -1027,7 +1027,7 @@ export default function SeedPayments({ siteId, resumeBill, onResumeCleared, onPr
         <button
           type="button"
           onClick={() => setMode('vehicle')}
-          className="btn-primary text-base px-8 py-3 flex items-center gap-2 font-extrabold shadow-lg"
+          className="bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-base px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl flex items-center gap-2 font-bold sm:font-extrabold shadow-sm sm:shadow-lg transition"
         >
           <span>Proceed to Vehicle Booking</span>
           <span>➔</span>

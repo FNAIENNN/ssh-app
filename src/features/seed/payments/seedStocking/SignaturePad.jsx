@@ -191,10 +191,12 @@ export default function SignaturePad({ onSave, value = null, readOnly = false })
             type="button"
             onClick={handleUndo}
             disabled={strokeHistory.length === 0}
-            className="btn-ghost text-xs font-bold py-1 px-3 border rounded-[8px] flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ borderColor: 'var(--color-border)', color: '#000000' }}
+            className="bg-white hover:bg-slate-50 text-[10px] sm:text-xs font-bold py-1 px-2 sm:px-3 border rounded-[6px] sm:rounded-[8px] flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ borderColor: 'var(--color-border)', color: '#334155' }}
           >
-            <span>↩️</span> Undo Last Stroke
+            <span className="text-[12px] sm:text-sm leading-none">↩️</span>
+            <span className="hidden sm:inline">Undo Last Stroke</span>
+            <span className="sm:hidden">Undo</span>
           </button>
 
           {/* Requirement #2: Erase/Clear Button */}
@@ -202,10 +204,12 @@ export default function SignaturePad({ onSave, value = null, readOnly = false })
             type="button"
             onClick={handleClear}
             disabled={!hasDrawn}
-            className="btn-ghost text-xs font-bold py-1 px-3 border rounded-[8px] flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ borderColor: 'var(--color-border)', color: '#000000' }}
+            className="bg-white hover:bg-slate-50 text-[10px] sm:text-xs font-bold py-1 px-2 sm:px-3 border rounded-[6px] sm:rounded-[8px] flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            style={{ borderColor: 'var(--color-border)', color: '#334155' }}
           >
-            <span>🗑️</span> Erase / Clear All
+            <span className="text-[12px] sm:text-sm leading-none">🗑️</span>
+            <span className="hidden sm:inline">Erase / Clear All</span>
+            <span className="sm:hidden">Clear All</span>
           </button>
         </div>
       )}

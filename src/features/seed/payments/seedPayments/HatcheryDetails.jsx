@@ -234,7 +234,7 @@ export default function HatcheryDetails({
         <button
           type="button"
           onClick={() => setShowAddForm((s) => !s)}
-          className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1 font-bold"
+          className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] sm:text-xs px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-lg flex items-center gap-1 font-bold shadow-sm transition"
         >
           <span>+</span> Add Hatchery
         </button>

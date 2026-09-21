@@ -72,7 +72,7 @@ export default function TankInsights({ tank }) {
       {/* 1) Feed Consumption + 2) Overall Count side-by-side */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Feed Consumption */}
-        <div className="card p-5">
+        <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-3">
             <span style={{ fontSize: 16 }}>🍚</span>
             <h4 className="text-sm font-extrabold" style={{ color: 'var(--color-text-primary)' }}>
@@ -101,7 +101,7 @@ export default function TankInsights({ tank }) {
         </div>
 
         {/* Overall Count */}
-        <div className="card p-5">
+        <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-3">
             <span style={{ fontSize: 16 }}>🦐</span>
             <h4 className="text-sm font-extrabold" style={{ color: 'var(--color-text-primary)' }}>
@@ -154,8 +154,8 @@ export default function TankInsights({ tank }) {
       </div>
 
       {/* 3) Middle Harvest Section */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-3">
+      <div className="card p-4 sm:p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0 mb-3">
           <div className="flex items-center gap-2">
             <span style={{ fontSize: 16 }}>🌾</span>
             <h4 className="text-sm font-extrabold" style={{ color: 'var(--color-text-primary)' }}>
@@ -165,7 +165,7 @@ export default function TankInsights({ tank }) {
 
           <a
             href="/app/harvest"
-            className="btn-primary text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-bold"
+            className="btn-primary text-xs px-3 py-2 sm:py-1.5 rounded-lg flex items-center justify-center sm:justify-start gap-1 font-bold w-full sm:w-auto"
           >
             🌾 Go to Harvest Tab →
           </a>

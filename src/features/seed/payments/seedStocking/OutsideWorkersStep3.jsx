@@ -140,7 +140,7 @@ export default function OutsideWorkersStep3({
         const returnedQty = Number(t.returnedQuantity) || 0;
         const transferredQty = Number(t.transferredQuantity) || 0;
         const finalQty = Math.max(0, originalQty - returnedQty - transferredQty);
-        
+
         const status = String(t.status || '');
 
         const isFullReturn = status.includes('Returned') && finalQty === 0;
@@ -675,7 +675,7 @@ export default function OutsideWorkersStep3({
           </p>
         </div>
       </div>
-      <div className="card p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
+      <div className="card p-4 sm:p-6 space-y-6 shadow-sm border" style={{ borderColor: 'var(--color-primary)' }}>
 
         {savedBatches.length > 0 && (
           <div className="space-y-4 mb-6">
@@ -740,7 +740,7 @@ export default function OutsideWorkersStep3({
               <button
                 type="button"
                 onClick={handleAddNewBatch}
-                className="w-full py-3 mt-2 border-2 border-dashed border-emerald-400 text-emerald-700 font-bold rounded-[10px] hover:bg-emerald-50 transition"
+                className="w-full py-2.5 sm:py-3 mt-2 border-2 border-dashed border-emerald-400 text-emerald-700 text-sm font-bold rounded-[10px] hover:bg-emerald-50 transition"
               >
                 + Add Another Batch
               </button>
@@ -917,7 +917,7 @@ export default function OutsideWorkersStep3({
                 type="button"
                 onClick={handleSaveBatch}
                 disabled={submitting}
-                className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2"
+                className="bg-slate-900 hover:bg-slate-800 text-white w-full text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow sm:shadow-lg rounded-[10px] sm:rounded-xl flex items-center justify-center gap-2 transition-colors"
               >
                 {submitting ? '⏳ Processing...' : (editingBatchId ? '💾 Update Batch' : '💾 Save Batch')}
               </button>
@@ -931,7 +931,7 @@ export default function OutsideWorkersStep3({
             type="button"
             onClick={handleSaveData}
             disabled={submitting}
-            className="btn-success w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white w-full text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow sm:shadow-lg rounded-[10px] sm:rounded-xl flex items-center justify-center gap-2 transition-colors"
           >
             {submitting ? '⏳ Processing...' : `✅ Complete ${workSource} Workflow ➔`}
           </button>

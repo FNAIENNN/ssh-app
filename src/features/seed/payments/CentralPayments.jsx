@@ -703,7 +703,7 @@ export default function CentralPayments() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveModule(tab.id)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-extrabold transition-all shadow-sm"
+                className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all shadow-sm flex-1 sm:flex-none"
                 style={{
                   background: isActive ? 'var(--color-primary)' : 'transparent',
                   color: isActive ? '#ffffff' : 'var(--color-text-secondary)',
@@ -724,22 +724,22 @@ export default function CentralPayments() {
         <>
           {/* ── 2. PAYMENT AMOUNT SUMMARY (TOTAL AMOUNT / PAID AMOUNT / REMAINING AMOUNT) ── */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="card p-4 sm:p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
               <p className="text-xs text-text-muted uppercase font-black tracking-wider">Total Amount</p>
               <p className="text-2xl font-black text-blue-700">₹{summaryStats.totalAmount.toLocaleString('en-IN')}</p>
             </div>
-            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="card p-4 sm:p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
               <p className="text-xs text-text-muted uppercase font-black tracking-wider">Paid Amount</p>
               <p className="text-2xl font-black text-emerald-600">₹{summaryStats.paidAmount.toLocaleString('en-IN')}</p>
             </div>
-            <div className="card p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="card p-4 sm:p-5 border space-y-1 bg-white rounded-[16px] shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
               <p className="text-xs text-text-muted uppercase font-black tracking-wider">Remaining Amount</p>
               <p className="text-2xl font-black text-amber-600">₹{summaryStats.remainingAmount.toLocaleString('en-IN')}</p>
             </div>
           </div>
 
           {/* ── STATUS FILTERS (SCOPED TO CURRENT MODULE) ── */}
-          <div className="space-y-4 bg-white p-5 rounded-[16px] border shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="space-y-4 bg-white p-4 sm:p-5 rounded-[16px] border shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
             <div>
               <p className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">
                 Status Filter — {activeModuleLabel}
@@ -752,7 +752,7 @@ export default function CentralPayments() {
                       key={tab.id}
                       type="button"
                       onClick={() => setStatusFilter(tab.id)}
-                      className="px-4 py-2 rounded-xl text-xs font-extrabold transition-all border"
+                      className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-extrabold transition-all border"
                       style={{
                         background: isActive ? 'var(--color-primary)' : 'var(--color-surface)',
                         color: isActive ? '#ffffff' : 'var(--color-text-secondary)',

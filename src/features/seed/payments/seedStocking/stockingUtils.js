@@ -106,6 +106,58 @@ export function aggregateTankStates(tankStates, transfers = []) {
   });
 }
 
+export function getTankIdentityKeys(tankOrId) {
+  if (tankOrId === null || tankOrId === undefined) return [];
+
+  if (typeof tankOrId !== 'object') {
+    const value = String(tankOrId).trim();
+    return value ? [value] : [];
+  }
+
+  const keys = [tankOrId.id, tankOrId.tank_id, tankOrId.tankId, tankOrId.name]
+    .filter(value => value !== null && value !== undefined && String(value).trim() !== '')
+    .map(value => String(value).trim());
+
+  return [...new Set(keys)];
+}
+
+export function vehicleHasTank(vehicle, tank) {
+  const tankKeys = new Set(getTankIdentityKeys(tank).map(key => key.toUpperCase()));
+  return (vehicle?.tank_ids || vehicle?.selectedTanks || vehicle?.selected_tanks || []).some(ref =>
+    getTankIdentityKeys(ref).some(key => tankKeys.has(key.toUpperCase()))
+  );
+}
+
+export function getPackingSourceTanks(activeOrder, fallbackTanks = []) {
+  const tanksByKey = new Map();
+
+  const addTank = (tank, overwrite = false) => {
+    if (!tank) return;
+    const keys = getTankIdentityKeys(tank).map(key => key.toUpperCase());
+    const existingKey = keys.find(key => tanksByKey.has(key));
+
+    if (existingKey) {
+      if (overwrite) {
+        const existing = tanksByKey.get(existingKey);
+        const merged = { ...existing, ...tank };
+        tanksByKey.forEach((value, key) => {
+          if (value === existing) tanksByKey.set(key, merged);
+        });
+        keys.forEach(key => tanksByKey.set(key, merged));
+      }
+      return;
+    }
+
+    keys.forEach(key => tanksByKey.set(key, tank));
+  };
+
+  (activeOrder?.selected_tanks || []).forEach(tank => addTank(tank));
+  (fallbackTanks || []).forEach(tank => addTank(tank));
+  (activeOrder?.packing_data?.tanks || []).forEach(tank => addTank(tank, true));
+
+  return [...new Set(tanksByKey.values())];
+}
+
 /**
  * Extract vehicle IDs assigned to Seed Van Plan and Packing from activeOrder and local state.
  *
@@ -168,8 +220,10 @@ export function getAssignedVehicleIds(activeOrder, step1Data = null, step2Data =
     });
 
     vehicles.forEach(v => {
-      const tids = (v.tank_ids || v.selectedTanks || []).map(String);
-      const hasConfiguredTank = tids.some(tid => configuredTankIds.has(tid));
+      const hasConfiguredTank = activeOrder.packing_data.tanks.some(pt =>
+        (configuredTankIds.has(String(pt.id)) || configuredTankNames.has(String(pt.name || '').trim().toUpperCase())) &&
+        vehicleHasTank(v, pt)
+      );
       if (hasConfiguredTank) {
         packingVehicleIds.add(String(v.id));
       }

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useMixedAllocationState } from './useMixedAllocationState';
 
-export default function MixedAllocation({ activeOrder, vehicles, siteId, onContinuePacking, onContinueSeedVan, onProceedToOutsideWorkers, onBack }) {
+export default function MixedAllocation({ activeOrder, vehicles, siteId, onContinuePacking, onContinueSeedVan, onProceedToOutsideWorkers, onBack, detectedActiveTanks, onProceedToReview }) {
   const {
     isPackingDone,
     isVanPlanDone,
@@ -15,7 +15,7 @@ export default function MixedAllocation({ activeOrder, vehicles, siteId, onConti
       <h4 className={`font-extrabold text-lg border-b pb-2 ${isFinal ? 'text-success' : 'text-primary'}`}>
         {isFinal ? '✅ Final Mixed Summary Review' : '📊 Live Mixed Summary'}
       </h4>
-      
+
       {summaryData.map(v => (
         <div key={v.vehicleId} className="border rounded-[8px] overflow-hidden">
           <div className="bg-slate-100 p-2 border-b font-bold text-sm text-slate-800">
@@ -63,7 +63,7 @@ export default function MixedAllocation({ activeOrder, vehicles, siteId, onConti
           </div>
         </div>
       ))}
-      
+
       {/* Grand Totals */}
       <div className="card p-4 bg-slate-800 text-white rounded-[12px] shadow-sm">
         <h5 className="font-extrabold text-sm mb-3 border-b border-slate-600 pb-2">Overall Grand Totals</h5>
@@ -115,46 +115,67 @@ export default function MixedAllocation({ activeOrder, vehicles, siteId, onConti
                     <button
                       type="button"
                       onClick={onContinuePacking}
-                      className="btn-primary py-3 rounded-[8px] text-sm font-bold shadow flex items-center justify-center gap-2"
+                      className="bg-slate-900 text-white hover:bg-slate-800 py-3 rounded-[8px] text-sm font-bold shadow flex items-center justify-center gap-2 transition"
                     >
                       📦 Continue Packing
                     </button>
                     <button
                       type="button"
                       onClick={onContinueSeedVan}
-                      className="btn-success py-3 rounded-[8px] text-sm font-bold shadow flex items-center justify-center gap-2"
+                      className="bg-emerald-600 text-white hover:bg-emerald-700 py-3 rounded-[8px] text-sm font-bold shadow flex items-center justify-center gap-2 transition"
                     >
                       🚐 Continue Seed Van
                     </button>
                     <button
                       type="button"
                       onClick={onProceedToOutsideWorkers}
-                      className="bg-slate-800 text-white hover:bg-slate-900 transition py-3 rounded-[8px] text-sm font-bold shadow flex items-center justify-center gap-2"
+                      className="bg-white border-2 border-slate-300 text-slate-700 hover:bg-slate-50 py-3 rounded-[8px] text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition"
                     >
                       No, Proceed to Next Step ➔
                     </button>
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={onProceedToOutsideWorkers}
-                  className="btn-success w-full mt-6 py-4 rounded-[12px] text-base font-extrabold shadow flex items-center justify-center gap-2"
-                >
-                  <span>👷 Confirm Summary &amp; Proceed to Outside Workers</span>
-                  <span>➔</span>
-                </button>
+                detectedActiveTanks && detectedActiveTanks.length > 0 ? (
+                  <div className="w-full bg-amber-50 border border-amber-200 p-4 rounded-[12px] shadow-sm mt-6 flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl">⚠️</span>
+                      <div>
+                        <h4 className="font-extrabold text-amber-900 text-left">Existing Active Tank Detected</h4>
+                        <p className="text-sm text-amber-800 mb-0 text-left">
+                          {detectedActiveTanks.length} tank(s) already have an active seed cycle. Review the additional stocking before continuing.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onProceedToReview}
+                      className="btn-primary py-2 px-6 font-bold shadow-sm whitespace-nowrap"
+                    >
+                      Proceed to Additional Stocking
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onProceedToOutsideWorkers}
+                    className="btn-success w-full mt-6 py-4 rounded-[12px] text-base font-extrabold shadow flex items-center justify-center gap-2"
+                  >
+                    <span>👷 Confirm Summary &amp; Proceed to Outside Workers</span>
+                    <span>➔</span>
+                  </button>
+                )
               )}
             </div>
           ) : (
             <div className="mb-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                
+
                 {/* Packing Button */}
                 <button
                   type="button"
                   onClick={onContinuePacking}
-                  className={`py-5 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-2 border-2 transition ${isPackingDone ? 'bg-blue-50 border-blue-400 text-blue-900' : 'btn-primary border-transparent'}`}
+                  className={`py-5 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-2 border-2 transition ${isPackingDone ? 'bg-blue-50 border-blue-400 text-blue-900' : 'bg-slate-900 text-white border-slate-900 hover:bg-slate-800 hover:border-slate-800'}`}
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">📦</span>
@@ -171,7 +192,7 @@ export default function MixedAllocation({ activeOrder, vehicles, siteId, onConti
                 <button
                   type="button"
                   onClick={onContinueSeedVan}
-                  className={`py-5 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-2 border-2 transition ${isVanPlanDone ? 'bg-green-50 border-green-400 text-green-900' : 'btn-success border-transparent'}`}
+                  className={`py-5 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-2 border-2 transition ${isVanPlanDone ? 'bg-green-50 border-green-400 text-green-900' : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:border-emerald-700'}`}
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">🚐</span>
@@ -183,9 +204,9 @@ export default function MixedAllocation({ activeOrder, vehicles, siteId, onConti
                     </span>
                   )}
                 </button>
-                
+
               </div>
-              
+
               {/* Show Live Summary only if they've saved something in either flow */}
               {(isPackingDone || isVanPlanDone) && renderSummaryTable(false)}
             </div>

@@ -59,7 +59,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
           .select('*')
           .eq('bill_id', bill.id)
           .order('created_at', { ascending: true });
-          
+
         if (vData && vData.length > 0) {
           loadedVehicles = vData;
         }
@@ -164,7 +164,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
   async function submitCashRequest(vehicle) {
     const form = forms[vehicle.id];
     const amount = Number(form?.cashAmount) || 0;
-    
+
     const reqCharge = Number(vehicle.transport_charges) || 0;
     const alreadyPaid = vehiclePaidAmount(vehicle.id);
     const remainingForVehicle = Math.max(0, reqCharge - alreadyPaid);
@@ -368,11 +368,10 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                         key={mode}
                         type="button"
                         onClick={() => updateForm(v.id, 'payMode', mode)}
-                        className={`w-full py-4 px-4 rounded-[12px] text-base font-extrabold border-2 transition-all flex items-center justify-center gap-3 ${
-                          isSelected 
-                            ? 'shadow-lg ring-2 ring-blue-200 ring-offset-1' 
+                        className={`w-full py-2 sm:py-4 px-3 sm:px-4 rounded-lg sm:rounded-[12px] text-xs sm:text-base font-extrabold border-2 transition-all flex items-center justify-center gap-2 sm:gap-3 ${isSelected
+                            ? 'shadow-sm sm:shadow-lg ring-2 ring-blue-200 ring-offset-1'
                             : 'hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm'
-                        }`}
+                          }`}
                         style={{
                           borderColor: isSelected ? 'var(--color-primary)' : 'var(--color-border)',
                           backgroundColor: isSelected ? 'var(--color-primary)' : '#ffffff',
@@ -380,7 +379,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                           transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                         }}
                       >
-                        <span className="text-2xl">{mode === 'cash' ? '💵' : '🏦'}</span>
+                        <span className="text-lg sm:text-2xl">{mode === 'cash' ? '💵' : '🏦'}</span>
                         <span>{mode === 'cash' ? 'Advance Cash' : 'Advance Bank'}</span>
                       </button>
                     );
@@ -391,7 +390,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                 {form.payMode === 'cash' && (
                   <div className="space-y-3">
                     {remainingForVehicle === 0 && (
-                      <div className="p-3 rounded-[8px] bg-red-50 text-red-700 text-sm font-extrabold border border-red-200 text-center shadow-sm">
+                      <div className="py-1 text-slate-500 text-[10px] sm:text-[11px] font-semibold italic sm:not-italic sm:p-3 sm:rounded-[8px] sm:bg-red-50 sm:text-red-700 sm:text-sm sm:font-extrabold sm:border sm:border-red-200 sm:text-center sm:shadow-sm">
                         No remaining balance available for another payment request.
                       </div>
                     )}
@@ -412,7 +411,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                           type="button"
                           onClick={() => submitCashRequest(v)}
                           disabled={remainingForVehicle === 0 || submitting === v.id + '-cash' || inputAmount <= 0 || isAmountInvalid}
-                          className="btn-primary w-full text-xs font-extrabold py-2.5 shadow disabled:opacity-50"
+                          className="bg-slate-800 hover:bg-slate-700 text-white rounded-[8px] w-full text-[11px] sm:text-xs font-bold py-2 sm:py-2.5 shadow-sm disabled:opacity-50 transition-colors"
                         >
                           {submitting === v.id + '-cash' ? 'Submitting…' : 'Submit Request'}
                         </button>
@@ -434,7 +433,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                 {form.payMode === 'bank' && (
                   <div className="space-y-3">
                     {remainingForVehicle === 0 && (
-                      <div className="p-3 rounded-[8px] bg-red-50 text-red-700 text-sm font-extrabold border border-red-200 text-center shadow-sm">
+                      <div className="py-1 text-slate-500 text-[10px] sm:text-[11px] font-semibold italic sm:not-italic sm:p-3 sm:rounded-[8px] sm:bg-red-50 sm:text-red-700 sm:text-sm sm:font-extrabold sm:border sm:border-red-200 sm:text-center sm:shadow-sm">
                         No remaining balance available for another payment request.
                       </div>
                     )}
@@ -469,7 +468,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                         disabled={remainingForVehicle === 0}
                       />
                     </div>
-                    
+
                     {isAmountInvalid && (
                       <p className="text-xs font-extrabold text-red-600">Requested amount cannot exceed the remaining balance of ₹{remainingForVehicle.toLocaleString('en-IN')}.</p>
                     )}
@@ -521,7 +520,7 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
                       type="button"
                       onClick={() => submitBankRequest(v)}
                       disabled={remainingForVehicle === 0 || submitting === v.id + '-bank' || inputAmount <= 0 || isAmountInvalid}
-                      className="btn-success w-full text-xs font-extrabold py-2.5 shadow disabled:opacity-50"
+                      className="bg-slate-800 hover:bg-slate-700 text-white rounded-[8px] w-full text-[11px] sm:text-xs font-bold py-2 sm:py-2.5 shadow-sm disabled:opacity-50 transition-colors"
                     >
                       {submitting === v.id + '-bank' ? 'Submitting…' : 'Submit Request'}
                     </button>
@@ -554,50 +553,69 @@ export default function VehiclePayments({ siteId, bill, onBack, onProceedToSeedS
 
       {/* Proceed to Next Steps */}
       <div className="pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
-        {!showNextSteps ? (
-          <button
-            type="button"
-            onClick={async () => {
-              if (onProceedClicked) {
-                await onProceedClicked();
-              }
-              setShowNextSteps(true);
-            }}
-            className="btn-success w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2"
-          >
-            <span>Proceed</span>
-            <span>➔</span>
-          </button>
-        ) : (
-          <div className="space-y-3">
-            <h4 className="font-extrabold text-sm text-center text-slate-700">Choose Next Step</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={async () => {
+            if (onProceedClicked) {
+              await onProceedClicked();
+            }
+            setShowNextSteps(true);
+          }}
+          className="btn-success w-full text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow-md sm:shadow-lg flex items-center justify-center gap-2"
+        >
+          <span>Proceed</span>
+          <span>➔</span>
+        </button>
+      </div>
+
+      {/* Choose Next Step Modal */}
+      {showNextSteps && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl transform transition-all flex flex-col gap-5">
+            <div className="flex justify-between items-center">
+              <h4 className="font-extrabold text-lg text-slate-800">Choose Next Step</h4>
+              <button
+                onClick={() => setShowNextSteps(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors flex items-center justify-center"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
               <button
                 type="button"
                 onClick={onProceedToPacking}
-                className="btn-primary py-4 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-1"
+                className="bg-slate-900 hover:bg-slate-800 text-white py-3.5 px-4 rounded-[12px] text-sm font-extrabold shadow-sm flex items-center justify-center gap-2 transition-colors"
               >
-                <span>📦 Packing</span>
+                <span className="text-base">📦</span>
+                <span>Packing</span>
               </button>
+
               <button
                 type="button"
                 onClick={onProceedToSeedStocking}
-                className="btn-success py-4 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-1"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 px-4 rounded-[12px] text-sm font-extrabold shadow-sm flex items-center justify-center gap-2 transition-colors"
               >
-                <span>🚐 Seed Van Plan</span>
+                <span className="text-base">🚐</span>
+                <span>Seed Van Plan</span>
               </button>
-              <button
-                type="button"
-                onClick={onProceedToMixed}
-                className="py-4 rounded-[12px] text-base font-extrabold shadow flex flex-col items-center justify-center gap-1 sm:col-span-2 transition-all hover:bg-sky-100"
-                style={{ background: '#e0f2fe', color: '#0369a1', borderColor: '#bae6fd', borderWidth: '2px' }}
-              >
-                <span>🔀 Mixed (Packing + Seed Van)</span>
-              </button>
+
+              {vehicles.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={onProceedToMixed}
+                  className="bg-sky-50 hover:bg-sky-100 text-sky-800 border-2 border-sky-200 hover:border-sky-300 py-3.5 px-4 rounded-[12px] text-sm font-extrabold shadow-sm flex items-center justify-center gap-2 transition-colors"
+                >
+                  <span className="text-base">🔀</span>
+                  <span>Mixed (Packing + Seed Van)</span>
+                </button>
+              )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

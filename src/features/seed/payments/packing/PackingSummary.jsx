@@ -1,6 +1,7 @@
 import React from 'react';
+import { vehicleHasTank } from '../seedStocking/stockingUtils';
 
-export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGoToHistory }) {
+export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGoToHistory, detectedActiveTanks, onProceedToReview }) {
   const selectedTanks = tanks.filter(t => t.selected);
 
   const finalTanks = selectedTanks;
@@ -8,19 +9,11 @@ export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGo
   const totalQuantity = finalTanks.reduce((sum, t) => sum + (Number(t.quantity) || 0), 0);
   const totalPackets = finalTanks.reduce((sum, t) => sum + (Number(t.numberOfPackets) || 0), 0);
 
-  const assignedTankIds = new Set();
-  vehicles.forEach(v => {
-    (v.tank_ids || v.selectedTanks || v.selected_tanks || []).forEach(tid => {
-      const idStr = typeof tid === 'object' && tid !== null ? String(tid.id) : String(tid);
-      assignedTankIds.add(idStr);
-    });
-  });
-
   const unassignedTanks = finalTanks.filter(t => {
     if (t.isTransferTarget && t.originalTankId) {
-      return !assignedTankIds.has(String(t.originalTankId));
+      return !vehicles.some(v => vehicleHasTank(v, { ...t, id: t.originalTankId }));
     }
-    return !assignedTankIds.has(String(t.id));
+    return !vehicles.some(v => vehicleHasTank(v, t));
   });
 
   const getStatusColor = (status) => {
@@ -64,7 +57,10 @@ export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGo
           );
         }
 
-        const originalQty = t.originalQuantity != null ? t.originalQuantity : t.quantity;
+        const originalQty = Number(t.originalQuantity != null ? t.originalQuantity : t.quantity);
+        const returnedQty = Number(t.returnedQuantity || 0);
+        const transferredQty = Number(t.transferredQuantity || 0);
+        const remainingQty = originalQty - returnedQty - transferredQty;
 
         return (
           <div key={t.id} className="p-4 rounded-[12px] border bg-white shadow-sm space-y-4" style={{ borderColor: 'var(--color-border)' }}>
@@ -80,19 +76,19 @@ export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGo
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <p className="text-xs text-slate-500 font-bold uppercase">Original</p>
-                <p className="font-extrabold text-slate-700">{Number(originalQty).toLocaleString('en-IN')} pcs</p>
+                <p className="font-extrabold text-slate-700">{originalQty.toLocaleString('en-IN')} pcs</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-bold uppercase">Returned</p>
-                <p className="font-extrabold text-red-600">{Number(t.returnedQuantity || 0).toLocaleString('en-IN')} pcs</p>
+                <p className="font-extrabold text-red-600">{returnedQty.toLocaleString('en-IN')} pcs</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-bold uppercase">Transferred</p>
-                <p className="font-extrabold text-blue-600">{Number(t.transferredQuantity || 0).toLocaleString('en-IN')} pcs</p>
+                <p className="font-extrabold text-blue-600">{transferredQty.toLocaleString('en-IN')} pcs</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-bold uppercase">Remaining</p>
-                <p className="font-extrabold text-emerald-700">{Number(t.quantity).toLocaleString('en-IN')} pcs</p>
+                <p className="font-extrabold text-emerald-700">{remainingQty.toLocaleString('en-IN')} pcs</p>
               </div>
             </div>
 
@@ -137,15 +133,7 @@ export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGo
       )}
 
       {vehicles.map((v, i) => {
-        const vTanks = finalTanks.filter(t => {
-          const checkIds = (v.tank_ids || v.selectedTanks || v.selected_tanks || []).map(tid =>
-            typeof tid === 'object' && tid !== null ? String(tid.id) : String(tid)
-          );
-          if (t.isTransferTarget && t.originalTankId) {
-            return checkIds.includes(String(t.originalTankId));
-          }
-          return checkIds.includes(String(t.id));
-        });
+        const vTanks = finalTanks.filter(t => vehicleHasTank(v, t.isTransferTarget && t.originalTankId ? { ...t, id: t.originalTankId } : t));
         if (vTanks.length === 0) return null;
         return (
           <div key={v.id} className="space-y-3 mb-6 p-4 rounded-[12px] border bg-slate-50 shadow-sm" style={{ borderColor: 'var(--color-border)' }}>
@@ -193,15 +181,36 @@ export default function PackingSummary({ tanks, vehicles = [], activeOrder, onGo
       </div>
 
       <div className="pt-4 flex justify-end">
-        <button
-          type="button"
-          onClick={onGoToHistory}
-          className="btn-success px-8 py-3 font-extrabold text-sm shadow-md"
-        >
-          {activeOrder?.current_stage === 'mixed-allocation'
-            ? "Confirm Summary & Return to Mixed Workflow ➔"
-            : "Confirm & Continue to Outside Workers ➔"}
-        </button>
+        {detectedActiveTanks && detectedActiveTanks.length > 0 ? (
+          <div className="w-full bg-amber-50 border border-amber-200 p-4 rounded-[12px] shadow-sm flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">⚠️</span>
+              <div>
+                <h4 className="font-extrabold text-amber-900 text-left">Existing Active Tank Detected</h4>
+                <p className="text-sm text-amber-800 mb-0 text-left">
+                  {detectedActiveTanks.length} tank(s) already have an active seed cycle. Review the additional stocking before continuing.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onProceedToReview}
+              className="btn-primary py-2 px-6 font-bold shadow-sm whitespace-nowrap"
+            >
+              Proceed to Additional Stocking
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onGoToHistory}
+            className="btn-success px-8 py-3 font-extrabold text-sm shadow-md"
+          >
+            {activeOrder?.current_stage === 'mixed-allocation'
+              ? "Confirm Summary & Return to Mixed Workflow ➔"
+              : "Confirm & Continue to Outside Workers ➔"}
+          </button>
+        )}
       </div>
     </div>
   );

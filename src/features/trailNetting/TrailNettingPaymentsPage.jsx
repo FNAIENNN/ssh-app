@@ -355,12 +355,12 @@ export default function TrailNettingPaymentsPage() {
         </div>
 
         {/* Sub-Tabs Navigation (Payments / History) */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 rounded-xl border border-slate-200 self-start">
           <button
             type="button"
             onClick={() => setActiveTab('payments')}
-            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 ${activeTab === 'payments'
-              ? 'bg-emerald-600 text-white shadow-sm'
+            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-[11px] sm:text-xs font-black transition-all flex items-center gap-1.5 ${activeTab === 'payments'
+              ? 'bg-slate-900 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
           >
@@ -370,15 +370,15 @@ export default function TrailNettingPaymentsPage() {
           <button
             type="button"
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 relative ${activeTab === 'history'
-              ? 'bg-emerald-600 text-white shadow-sm'
+            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-[11px] sm:text-xs font-black transition-all flex items-center gap-1.5 relative ${activeTab === 'history'
+              ? 'bg-slate-900 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
               }`}
           >
             <span>🕓</span> History
             {historyBills.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${activeTab === 'history' ? 'bg-emerald-800 text-white' : 'bg-slate-300 text-slate-700'
+                className={`text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === 'history' ? 'bg-slate-700 text-slate-100' : 'bg-slate-300 text-slate-700'
                   }`}
               >
                 {historyBills.length}
@@ -403,7 +403,7 @@ export default function TrailNettingPaymentsPage() {
               <button
                 type="button"
                 onClick={handleOpenAddSupplier}
-                className="btn-primary text-xs font-bold px-3 py-2 flex items-center gap-1.5 self-start sm:self-auto"
+                className="bg-slate-900 text-white hover:bg-slate-800 text-[10px] sm:text-xs font-bold px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg flex items-center gap-1.5 self-start sm:self-auto transition-colors shadow-sm"
               >
                 + Add New Supplier
               </button>
@@ -697,7 +697,7 @@ export default function TrailNettingPaymentsPage() {
               type="button"
               onClick={handleSubmitPayment}
               disabled={saving}
-              className="btn-primary w-full py-4 text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition bg-emerald-600 hover:bg-emerald-700 border-none text-white"
+              className="w-full py-3 sm:py-4 text-sm sm:text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition bg-slate-900 hover:bg-slate-800 rounded-xl text-white"
             >
               {saving ? 'Submitting to Backend & Forwarding to Finance…' : '🚀 Submit Payment & Forward to Finance'}
             </button>
@@ -918,11 +918,11 @@ export default function TrailNettingPaymentsPage() {
                     setShowAddSupplierModal(false);
                     setShowEditSupplierModal(false);
                   }}
-                  className="btn-secondary text-xs font-bold px-4 py-2"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-sm rounded-lg text-xs font-bold px-4 py-2"
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary text-xs font-bold px-4 py-2">
+                <button type="submit" className="bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-sm rounded-lg text-xs font-bold px-4 py-2">
                   Save Supplier
                 </button>
               </div>
@@ -1107,7 +1107,7 @@ export default function TrailNettingPaymentsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedBillForView(null)}
-                className="btn-primary text-xs font-bold px-5 py-2.5"
+                className="bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-sm rounded-lg text-xs font-bold px-5 py-2.5"
               >
                 Close Bill View
               </button>

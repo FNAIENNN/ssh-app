@@ -132,16 +132,15 @@ export default function ChecklistPage() {
           {/* Select All Card / Button */}
           <div
             onClick={toggleSelectAll}
-            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${
-              isAllSelected
+            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${isAllSelected
                 ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm'
                 : 'border-slate-300 bg-slate-100 hover:border-slate-400 text-slate-700'
-            }`}
+              }`}
           >
             <input
               type="checkbox"
               checked={isAllSelected}
-              onChange={() => {}}
+              onChange={() => { }}
               className="w-4 h-4 accent-emerald-600 rounded cursor-pointer pointer-events-none"
             />
             <span className="text-xs font-extrabold select-none">
@@ -158,22 +157,20 @@ export default function ChecklistPage() {
               <div
                 key={item.id}
                 onClick={() => toggleItem(item.id)}
-                className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer select-none transition-all ${
-                  isChecked
+                className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer select-none transition-all ${isChecked
                     ? 'border-emerald-500 bg-emerald-50/70 shadow-sm'
                     : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/60'
-                }`}
+                  }`}
               >
                 <input
                   type="checkbox"
                   checked={isChecked}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   className="w-5 h-5 accent-emerald-600 rounded cursor-pointer pointer-events-none"
                 />
                 <span
-                  className={`text-sm font-bold ${
-                    isChecked ? 'text-emerald-900' : 'text-slate-700'
-                  }`}
+                  className={`text-sm font-bold ${isChecked ? 'text-emerald-900' : 'text-slate-700'
+                    }`}
                 >
                   {item.label}
                 </span>
@@ -187,7 +184,7 @@ export default function ChecklistPage() {
       <div className="pt-2">
         <button
           onClick={handleProceed}
-          className="btn-primary w-full py-3.5 text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition"
+          className="w-full py-3 sm:py-3.5 text-sm sm:text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition bg-slate-900 hover:bg-slate-800 text-white rounded-xl"
         >
           Proceed to Sampling →
         </button>

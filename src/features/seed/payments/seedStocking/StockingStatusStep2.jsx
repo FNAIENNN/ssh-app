@@ -303,7 +303,7 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
   }
 
   return (
-    <div className="card p-6 space-y-6 max-w-4xl mx-auto shadow-md border" style={{ borderColor: 'var(--color-primary)' }}>
+    <div className="card p-4 sm:p-6 space-y-6 max-w-4xl mx-auto shadow-md border" style={{ borderColor: 'var(--color-primary)' }}>
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="space-y-3">
@@ -405,145 +405,138 @@ export default function StockingStatusStep2({ step1Data, activeOrder, siteId, se
         </div>
 
         {/* Dynamic Clickable Drum Grid (Restored Left/Right layout) */}
-        <div className="overflow-x-auto rounded-[12px] border shadow-sm bg-white" style={{ borderColor: 'var(--color-border)' }}>
-          <table className="w-full text-left border-collapse min-w-[650px]">
-            <thead>
-              <tr className="bg-slate-900 text-white text-xs uppercase tracking-wider">
-                <th className="p-3 font-extrabold w-1/2 border-r border-slate-700 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-base">🛢️</span>
-                    <span>Left Drum Section</span>
-                  </div>
-                </th>
-                <th className="p-3 font-extrabold w-1/2 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-base">🛢️</span>
-                    <span>Right Drum Section</span>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
+        {/* Dynamic Clickable Drum Grid (Restored Left/Right layout) */}
+        <div className="rounded-[12px] border shadow-sm bg-white overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex bg-slate-900 text-white text-[9px] sm:text-xs uppercase tracking-wider">
+            <div className="flex-1 p-2 sm:p-3 font-extrabold border-r border-slate-700 text-center flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
+              <span className="text-sm sm:text-base leading-none">🛢️</span>
+              <span>Left Drum</span>
+            </div>
+            <div className="flex-1 p-2 sm:p-3 font-extrabold text-center flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
+              <span className="text-sm sm:text-base leading-none">🛢️</span>
+              <span>Right Drum</span>
+            </div>
+          </div>
+          <div className="flex flex-col bg-slate-50">
+            {(() => {
 
-                const sortedDrums = Object.values(tankStates).sort((a, b) => a.drumNum - b.drumNum);
-                return Array.from({ length: Math.ceil(sortedDrums.length / 2) }).map((_, idx) => {
-                  const leftDrum = sortedDrums[idx * 2];
-                  const rightDrum = sortedDrums[idx * 2 + 1];
+              const sortedDrums = Object.values(tankStates).sort((a, b) => a.drumNum - b.drumNum);
+              return Array.from({ length: Math.ceil(sortedDrums.length / 2) }).map((_, idx) => {
+                const leftDrum = sortedDrums[idx * 2];
+                const rightDrum = sortedDrums[idx * 2 + 1];
 
-                  const renderDrumCell = (state) => {
-                    if (!state) {
-                      return (
-                        <div className="p-4 rounded-[12px] border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center min-h-[190px] text-center space-y-2 opacity-50">
-                          <span className="text-2xl">🛢️</span>
-                          <p className="text-xs font-bold text-slate-400">Empty Slot</p>
-                        </div>
-                      );
-                    }
-
-                    const tankKey = state.drumKey;
-
-                    const actualTransferred = state.transferredOut || 0;
-                    const actualReturned = returnBills
-                      .filter(r => r.drum_name === state.tankName || r.original_tank === state.tankName)
-                      .reduce((sum, r) => sum + Number(r.seed_count_returned), 0);
-
-                    let bgColor = '#f8fafc';
-                    let borderColor = 'var(--color-border)';
-                    let textColor = '#0f172a';
-
-                    if (state.status === 'completed') {
-                      bgColor = '#dcfce7';
-                      borderColor = '#22c55e';
-                      textColor = '#14532d';
-                    } else if (state.status === 'pending' || state.status === 'Partial Return' || state.status === 'Partial Transfer') {
-                      bgColor = '#fef9c3';
-                      borderColor = '#eab308';
-                      textColor = '#713f12';
-                    } else if (state.status === 'returned') {
-                      bgColor = '#ffedd5';
-                      borderColor = '#f97316';
-                      textColor = '#7c2d12';
-                    } else if (state.status === 'transferred') {
-                      bgColor = '#eff6ff';
-                      borderColor = '#3b82f6';
-                      textColor = '#1e3a8a';
-                    }
-
+                const renderDrumCell = (state) => {
+                  if (!state) {
                     return (
-                      <div
-                        key={tankKey}
-                        onClick={() => {
-                          if (state.status !== 'transferred') {
-                            setActiveModalTankKey(tankKey);
-                            setReturnCountInput(String(state.currentCount));
-                          }
-                        }}
-                        className={`p-4 rounded-[12px] border space-y-1 text-center h-full flex flex-col justify-center ${state.status !== 'transferred' ? 'cursor-pointer hover:shadow-md transition' : ''}`}
-                        style={{ background: bgColor, borderColor, borderWidth: 2 }}
-                      >
-                        <p className="text-[11px] font-extrabold uppercase text-text-muted">Drum {state.drumNum}</p>
-                        <p className="font-extrabold text-base" style={{ color: textColor }}>
-                          {state.tankName}
-                        </p>
-                        {state.status === 'returned' ? (
-                          <p className="text-[11px] font-black text-amber-700">Returned ({actualReturned > 0 ? actualReturned : state.originalCount} pcs)</p>
-                        ) : state.status === 'transferred' ? (
-                          <div className="text-[11px] font-bold mt-1" style={{ color: '#1d4ed8' }}>
-                            🔵 Transferred
-                          </div>
-                        ) : (
-                          <>
-                            {state.status === 'pending' || (state.status === 'completed' && actualTransferred === 0 && actualReturned === 0) ? (
-                              <div className="text-xs font-semibold text-center mt-2" style={{ color: textColor }}>
-                                <span className="block text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Quantity</span>
-                                {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
-                              </div>
-                            ) : (actualTransferred > 0 || actualReturned > 0) ? (
-                              <div className="text-[10px] text-left bg-white/60 p-2 rounded mt-2 space-y-1 mx-auto max-w-[200px]">
-                                <p><strong>Source:</strong> {state.tankName}</p>
-                                {state.transferredTo && <p><strong>Target:</strong> {state.transferredTo}</p>}
-                                <p><strong>Source Quantity:</strong> {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs</p>
-                                {actualTransferred > 0 && <p><strong>Transferred:</strong> {actualTransferred.toLocaleString('en-IN')} pcs</p>}
-                                {actualReturned > 0 && <p><strong>Returned:</strong> {actualReturned.toLocaleString('en-IN')} pcs</p>}
-                                <p><strong>Remaining:</strong> {state.currentCount?.toLocaleString('en-IN')} pcs</p>
-                              </div>
-                            ) : (
-                              <div className="text-xs font-semibold text-center mt-2" style={{ color: textColor }}>
-                                <span className="block text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Quantity</span>
-                                {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
-                              </div>
-                            )}
-                          </>
-                        )}
-                        <span className="inline-block mt-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full capitalize mx-auto" style={{ background: `${borderColor}30`, color: textColor }}>
-                          {state.status}
-                        </span>
+                      <div className="p-2 sm:p-4 rounded-[8px] sm:rounded-[12px] border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center h-full min-h-[120px] sm:min-h-[190px] text-center space-y-1.5 sm:space-y-2 opacity-50">
+                        <span className="text-xl sm:text-2xl leading-none">🛢️</span>
+                        <p className="text-[9px] sm:text-xs font-bold text-slate-400 leading-tight">Empty Slot</p>
                       </div>
                     );
-                  };
+                  }
+
+                  const tankKey = state.drumKey;
+
+                  const actualTransferred = state.transferredOut || 0;
+                  const actualReturned = returnBills
+                    .filter(r => r.drum_name === state.tankName || r.original_tank === state.tankName)
+                    .reduce((sum, r) => sum + Number(r.seed_count_returned), 0);
+
+                  let bgColor = '#f8fafc';
+                  let borderColor = 'var(--color-border)';
+                  let textColor = '#0f172a';
+
+                  if (state.status === 'completed') {
+                    bgColor = '#dcfce7';
+                    borderColor = '#22c55e';
+                    textColor = '#14532d';
+                  } else if (state.status === 'pending' || state.status === 'Partial Return' || state.status === 'Partial Transfer') {
+                    bgColor = '#fef9c3';
+                    borderColor = '#eab308';
+                    textColor = '#713f12';
+                  } else if (state.status === 'returned') {
+                    bgColor = '#ffedd5';
+                    borderColor = '#f97316';
+                    textColor = '#7c2d12';
+                  } else if (state.status === 'transferred') {
+                    bgColor = '#eff6ff';
+                    borderColor = '#3b82f6';
+                    textColor = '#1e3a8a';
+                  }
 
                   return (
-                    <tr key={idx} className="border-b" style={{ borderColor: 'var(--color-border)' }}>
-                      <td className="w-1/2 align-top p-4 border-r" style={{ borderColor: 'var(--color-border)' }}>
-                        {renderDrumCell(leftDrum)}
-                      </td>
-                      <td className="w-1/2 align-top p-4">
-                        {renderDrumCell(rightDrum)}
-                      </td>
-                    </tr>
+                    <div
+                      key={tankKey}
+                      onClick={() => {
+                        if (state.status !== 'transferred') {
+                          setActiveModalTankKey(tankKey);
+                          setReturnCountInput(String(state.currentCount));
+                        }
+                      }}
+                      className={`p-1.5 sm:p-4 rounded-[8px] sm:rounded-[12px] border space-y-1 text-center h-full flex flex-col justify-center overflow-hidden ${state.status !== 'transferred' ? 'cursor-pointer hover:shadow-md transition' : ''}`}
+                      style={{ background: bgColor, borderColor, borderWidth: 2 }}
+                    >
+                      <p className="text-[9px] sm:text-[11px] font-extrabold uppercase text-text-muted truncate">Drum {state.drumNum}</p>
+                      <p className="font-extrabold text-[11px] sm:text-base truncate" style={{ color: textColor }}>
+                        {state.tankName}
+                      </p>
+                      {state.status === 'returned' ? (
+                        <p className="text-[9px] sm:text-[11px] font-black text-amber-700 leading-tight">Returned ({actualReturned > 0 ? actualReturned : state.originalCount} pcs)</p>
+                      ) : state.status === 'transferred' ? (
+                        <div className="text-[9px] sm:text-[11px] font-bold mt-0.5 sm:mt-1" style={{ color: '#1d4ed8' }}>
+                          🔵 Transferred
+                        </div>
+                      ) : (
+                        <>
+                          {state.status === 'pending' || (state.status === 'completed' && actualTransferred === 0 && actualReturned === 0) ? (
+                            <div className="text-[10px] sm:text-xs font-semibold text-center mt-1 sm:mt-2 truncate w-full" style={{ color: textColor }}>
+                              <span className="block text-[8px] sm:text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Qty</span>
+                              {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
+                            </div>
+                          ) : (actualTransferred > 0 || actualReturned > 0) ? (
+                            <div className="text-[9px] sm:text-[10px] text-left bg-white/60 p-1.5 sm:p-2 rounded mt-1 sm:mt-2 space-y-0.5 sm:space-y-1 mx-auto w-full max-w-[200px] break-words">
+                              <p className="truncate"><strong>Src:</strong> {state.tankName}</p>
+                              {state.transferredTo && <p className="truncate"><strong>Tgt:</strong> {state.transferredTo}</p>}
+                              <p><strong>Src Qty:</strong> {(state.originalCount || state.currentCount).toLocaleString('en-IN')}</p>
+                              {actualTransferred > 0 && <p><strong>Trnsf:</strong> {actualTransferred.toLocaleString('en-IN')}</p>}
+                              {actualReturned > 0 && <p><strong>Rtn:</strong> {actualReturned.toLocaleString('en-IN')}</p>}
+                              <p><strong>Rem:</strong> {state.currentCount?.toLocaleString('en-IN')}</p>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] sm:text-xs font-semibold text-center mt-1 sm:mt-2 truncate w-full" style={{ color: textColor }}>
+                              <span className="block text-[8px] sm:text-[10px] font-extrabold uppercase text-slate-500 mb-0.5">Source Qty</span>
+                              {(state.originalCount || state.currentCount).toLocaleString('en-IN')} pcs
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <span className="inline-block mt-0.5 sm:mt-1 text-[8px] sm:text-[10px] font-extrabold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full capitalize mx-auto max-w-full truncate" style={{ background: `${borderColor}30`, color: textColor }}>
+                        {state.status}
+                      </span>
+                    </div>
                   );
-                });
-              })()}
-            </tbody>
-          </table>
+                };
+
+                return (
+                  <div key={idx} className="flex flex-row border-b last:border-b-0 w-full" style={{ borderColor: 'var(--color-border)' }}>
+                    <div className="p-1.5 sm:p-4 border-r w-1/2 min-w-0" style={{ borderColor: 'var(--color-border)' }}>
+                      {renderDrumCell(leftDrum)}
+                    </div>
+                    <div className="p-1.5 sm:p-4 w-1/2 min-w-0">
+                      {renderDrumCell(rightDrum)}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
         </div>
       </div>
 
       {/* Drum Action Modal */}
       {activeModalTankKey && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="card p-6 max-w-md w-full space-y-4 bg-white rounded-[16px] shadow-2xl">
+          <div className="card p-4 sm:p-6 max-w-md w-full space-y-4 bg-white rounded-[16px] shadow-2xl">
             {/* Global Navigation Header */}
             <div className="flex items-center justify-between border-b pb-2 mb-2">
               {(selectedAction || otherSubAction) ? (

@@ -5,6 +5,7 @@ import { useAuth } from '../../../../hooks/useAuth';
 import { useToast } from '../../../../hooks/useToast';
 import CameraCapture from '../../../../components/ui/CameraCapture';
 import { generateReturnBill } from '../returnBillHelper';
+import { vehicleHasTank } from '../seedStocking/stockingUtils';
 
 export default function PackingSelection({ tanks, setTanks, vehicles = [], activeOrder, onProceed }) {
   const [activeModalTankKey, setActiveModalTankKey] = useState(null);
@@ -49,8 +50,8 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
   };
 
   const getVehicleNo = (tank) => {
-    const searchId = tank.originalTankId || tank.id;
-    const assignedVehicle = vehicles.find(v => (v.tank_ids || v.selectedTanks || []).some(id => String(id) === String(searchId)));
+    const searchTank = tank.originalTankId ? { ...tank, id: tank.originalTankId } : tank;
+    const assignedVehicle = vehicles.find(v => vehicleHasTank(v, searchTank));
     return assignedVehicle ? (assignedVehicle.vehicle_no || 'Unknown') : 'Unassigned';
   };
 
@@ -479,15 +480,11 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
     </div>
   );
 
-  const assignedTankIds = new Set();
-  vehicles.forEach(v => {
-    (v.tank_ids || v.selectedTanks || []).forEach(tid => assignedTankIds.add(String(tid)));
-  });
-  const unassignedTanks = validTanks.filter(t => !assignedTankIds.has(String(t.id)) && !t.isTransferTarget);
+  const unassignedTanks = validTanks.filter(t => !vehicles.some(v => vehicleHasTank(v, t)) && !t.isTransferTarget);
   const targetTanks = validTanks.filter(t => t.isTransferTarget);
 
   return (
-    <div className="card p-6 space-y-6 max-w-4xl mx-auto shadow-md border relative" style={{ borderColor: 'var(--color-primary)' }}>
+    <div className="card p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-4xl mx-auto shadow-md border relative" style={{ borderColor: 'var(--color-primary)' }}>
       <div className="flex items-start justify-between">
         <div className="space-y-3">
           <div>
@@ -509,7 +506,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
 
       <div className="p-4 rounded-[16px] border space-y-4 bg-slate-50" style={{ borderColor: 'var(--color-border)' }}>
         {vehicles.map((v, vIndex) => {
-          const vTanks = validTanks.filter(t => (v.tank_ids || v.selectedTanks || []).some(id => String(id) === String(t.id)) && !t.isTransferTarget);
+          const vTanks = validTanks.filter(t => vehicleHasTank(v, t) && !t.isTransferTarget);
           if (vTanks.length === 0) return null;
           return (
             <div key={v.id || vIndex} className="space-y-4 mb-6">
@@ -575,7 +572,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
           onClick={closeModal}
         >
           <div
-            className="card p-6 max-w-md w-full space-y-4 bg-white rounded-[16px] shadow-2xl relative"
+            className="card p-4 sm:p-6 max-w-md w-full space-y-4 bg-white rounded-[16px] shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b pb-2 mb-3">

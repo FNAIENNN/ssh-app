@@ -61,22 +61,22 @@ function PaymentsInner({ siteId }) {
   return (
     <div className="space-y-4">
       {/* Sub-tab navigation */}
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => handleTabClick(t.id)}
-            className="px-4 py-2 rounded-full text-sm font-semibold border transition"
-            style={
-              activeTab === t.id
-                ? { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' }
-                : { borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-sm overflow-x-auto w-full mb-4">
+        <div className="flex items-center gap-2 min-w-max">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => handleTabClick(t.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${activeTab === t.id
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+                }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Seed Order Workflow (list / form / pay / vehicle / vehicle-payments / readonly) */}

@@ -142,7 +142,7 @@ export default function Reports() {
 
       {/* Feed Charts Management Panel */}
       {showFeedCharts && (
-        <div className="card p-5 border space-y-4" style={{ borderColor: 'var(--color-primary)' }}>
+        <div className="card p-4 sm:p-5 border space-y-3 sm:space-y-4" style={{ borderColor: 'var(--color-primary)' }}>
           <div className="flex items-center justify-between">
             <h4 className="font-bold text-base flex items-center gap-2">
               <span>🍱</span> Feed Charts Management

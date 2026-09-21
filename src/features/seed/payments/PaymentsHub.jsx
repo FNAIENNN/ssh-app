@@ -25,7 +25,7 @@ export default function PaymentsHub() {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className="px-4 py-2 rounded-full text-sm font-semibold border transition"
+            className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-semibold border transition"
             style={
               tab === t.id
                 ? { background: 'var(--color-primary)', color: '#fff', borderColor: 'var(--color-primary)' }

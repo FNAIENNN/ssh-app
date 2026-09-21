@@ -427,9 +427,9 @@ export default function SeedOrderWorkflow({ siteId }) {
           </div>
           <button
             onClick={() => { setActiveBill(null); setSeedMode('form'); }}
-            className="btn-primary text-sm px-4 py-2 font-extrabold flex items-center gap-1.5 shadow-md"
+            className="bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm px-3 sm:px-4 py-2 rounded-xl font-bold sm:font-extrabold flex items-center gap-1.5 shadow-sm transition"
           >
-            <span className="text-lg">+</span> Add New Seed Order
+            <span className="text-base sm:text-lg">+</span> Add New Seed Order
           </button>
         </div>
 
@@ -481,7 +481,7 @@ export default function SeedOrderWorkflow({ siteId }) {
             <p className="text-xs text-text-muted">
               Click "+ Add New Seed Order" to create your first seed order bill.
             </p>
-            <button onClick={() => setSeedMode('form')} className="btn-primary text-xs font-bold px-4 py-2">
+            <button onClick={() => setSeedMode('form')} className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-4 py-2 rounded-xl font-bold shadow-sm transition">
               + Add New Seed Order
             </button>
           </div>
@@ -493,7 +493,7 @@ export default function SeedOrderWorkflow({ siteId }) {
               return (
                 <div
                   key={b.id}
-                  className="card p-5 border cursor-pointer hover:shadow-lg transition space-y-3 relative"
+                  className="card p-3 sm:p-5 border cursor-pointer shadow-sm sm:shadow hover:shadow-md sm:hover:shadow-lg transition space-y-2 sm:space-y-3 relative"
                   style={{ borderColor: 'var(--color-border)' }}
                 >
                   {/* Delete button (UI only) */}
@@ -507,12 +507,12 @@ export default function SeedOrderWorkflow({ siteId }) {
                     ✕ Delete
                   </button>
 
-                  <div className="flex items-center justify-between pr-16" onClick={() => openReadOnlyView(b)}>
-                    <span className="text-sm font-extrabold px-3 py-1 rounded-full text-white"
+                  <div className="flex items-center justify-between pr-14 sm:pr-16" onClick={() => openReadOnlyView(b)}>
+                    <span className="text-xs sm:text-sm font-extrabold px-2.5 sm:px-3 py-1 rounded-full text-white"
                       style={{ background: isCompleted ? '#059669' : 'var(--color-primary)' }}>
                       {b.bill_number}
                     </span>
-                    <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full"
+                    <span className="text-[10px] sm:text-xs font-extrabold px-2 sm:px-2.5 py-0.5 rounded-full"
                       style={{ background: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}>
                       {badge.label}
                     </span>
@@ -539,7 +539,7 @@ export default function SeedOrderWorkflow({ siteId }) {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); resumeBill(b); }}
-                          className="btn-primary text-xs font-bold px-3 py-1.5"
+                          className="bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg border border-slate-300 transition shadow-sm"
                         >
                           Resume →
                         </button>
@@ -553,7 +553,7 @@ export default function SeedOrderWorkflow({ siteId }) {
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); resumeBill(b); }}
-                          className="btn-success text-xs font-bold px-3 py-1.5"
+                          className="bg-white hover:bg-slate-50 text-emerald-700 text-xs font-bold px-4 py-2 rounded-lg border border-emerald-300 transition shadow-sm"
                         >
                           Continue Stocking →
                         </button>
@@ -599,7 +599,7 @@ export default function SeedOrderWorkflow({ siteId }) {
           <span className="text-xs font-bold text-text-muted">Create Seed Order</span>
         </div>
 
-        <div className="card p-5 space-y-5">
+        <div className="card p-4 sm:p-5 space-y-4 sm:space-y-5">
           <h3 className="font-bold text-lg">Seed Order Details</h3>
 
           {/* 1. Section Selection */}
@@ -702,7 +702,7 @@ export default function SeedOrderWorkflow({ siteId }) {
           <div className="space-y-4 pt-2 border-t" style={{ borderColor: 'var(--color-border)' }}>
 
             {/* Row 1 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="field-label">Seed Type</label>
                 <input className="field" value={orderForm.seedType}
@@ -723,7 +723,7 @@ export default function SeedOrderWorkflow({ siteId }) {
             </div>
 
             {/* Row 3 */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="field-label">Σ Overall Quantity</label>
                 <input
@@ -917,7 +917,7 @@ export default function SeedOrderWorkflow({ siteId }) {
             }
             setSeedMode('vehicle');
           }}
-          className="btn-primary text-base px-8 py-3 flex items-center gap-2 font-extrabold shadow-lg"
+          className="bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-base px-4 sm:px-8 py-2.5 sm:py-3 rounded-xl flex items-center gap-2 font-bold sm:font-extrabold shadow-sm sm:shadow-lg transition"
         >
           <span>Proceed to Vehicle Booking</span>
           <span>➔</span>

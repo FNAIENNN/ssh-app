@@ -30,27 +30,23 @@ export default function SeedTab() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
+    <div className="max-w-6xl mx-auto p-3 sm:p-6 pb-24 sm:pb-6">
       <div className="mb-5">
         <p className="text-xs uppercase tracking-wider text-text-muted">{site.source ?? 'Site'}</p>
         <h1 className="text-2xl font-extrabold">{site.name}</h1>
       </div>
 
-      <nav className="flex flex-wrap gap-2 mb-6">
+      <nav className="flex items-center gap-1.5 bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-x-auto mb-6">
         {CARDS.map((c) => (
           <NavLink
             key={c.to}
             to={c.to}
             end={c.to === 'dashboard'}
             className={({ isActive }) =>
-              `px-4 py-2 rounded-full text-sm font-semibold border transition flex items-center gap-2 ${
-                isActive ? 'text-white' : 'bg-transparent'
+              `px-3.5 py-2 rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 whitespace-nowrap ${isActive
+                ? 'bg-slate-900 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`
-            }
-            style={({ isActive }) =>
-              isActive
-                ? { background: 'var(--color-primary)', borderColor: 'var(--color-primary)' }
-                : { borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }
             }
           >
             <span>{c.icon}</span>

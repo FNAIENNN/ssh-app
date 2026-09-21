@@ -368,8 +368,8 @@ export default function SamplingPage() {
                     key={index}
                     onClick={() => setSelectedRowIndex(index)}
                     className={`cursor-pointer transition-colors ${isSelected
-                        ? 'bg-emerald-50/70 font-semibold'
-                        : 'hover:bg-slate-50'
+                      ? 'bg-emerald-50/70 font-semibold'
+                      : 'hover:bg-slate-50'
                       }`}
                   >
                     <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -457,8 +457,8 @@ export default function SamplingPage() {
                 type="button"
                 onClick={() => toggleDisease(disease)}
                 className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 border ${isSelected
-                    ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-100'
                   }`}
               >
                 <span>{isSelected ? '✓' : '+'}</span>
@@ -622,7 +622,7 @@ export default function SamplingPage() {
         <button
           onClick={handleProceed}
           disabled={saving}
-          className="btn-primary w-full py-3.5 text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition"
+          className="w-full py-3 sm:py-3.5 text-sm sm:text-base font-extrabold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition bg-slate-900 hover:bg-slate-800 text-white rounded-xl"
         >
           {saving ? 'Saving Sampling Data…' : 'Proceed to Reports →'}
         </button>

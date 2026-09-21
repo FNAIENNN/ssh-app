@@ -153,18 +153,18 @@ export default function VehicleBooking({ siteId, tanks: initialTanks = [], billI
       }
     }
 
-    const updatedList = vehicles.map(v => 
+    const updatedList = vehicles.map(v =>
       v.id === vehicleId ? { ...v, id: newId, collapsed: true } : v
     );
     setVehicles(updatedList);
 
     if (activeBillId) {
-       const bookedVehicles = updatedList.filter(v => v.driverName || v.vehicleNo || v.selectedTanks.length > 0);
-       await autosaveBillStep(
-         supabase, TABLES, activeBillId,
-         { vehicle_booking_data: { vehicles: bookedVehicles } },
-         'Vehicle Booking Saved', user?.email
-       );
+      const bookedVehicles = updatedList.filter(v => v.driverName || v.vehicleNo || v.selectedTanks.length > 0);
+      await autosaveBillStep(
+        supabase, TABLES, activeBillId,
+        { vehicle_booking_data: { vehicles: bookedVehicles } },
+        'Vehicle Booking Saved', user?.email
+      );
     }
     setSubmitting(false);
     toast.success(`Vehicle saved successfully.`);
@@ -173,7 +173,7 @@ export default function VehicleBooking({ siteId, tanks: initialTanks = [], billI
   async function removeVehicle(id) {
     if (vehicles.length <= 1) return;
     setVehicles((prev) => prev.filter((v) => v.id !== id));
-    
+
     // If it's a real DB record, delete it from the database immediately
     if (!String(id).startsWith('temp-')) {
       await supabase.from(TABLES.vehicleBookings).delete().eq('id', id);
@@ -467,7 +467,7 @@ export default function VehicleBooking({ siteId, tanks: initialTanks = [], billI
                   <button
                     type="button"
                     onClick={() => setActiveAddTankVehicleId(activeAddTankVehicleId === v.id ? null : v.id)}
-                    className="btn-primary text-xs px-2.5 py-1 font-bold flex items-center gap-1"
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-[10px] sm:text-xs px-2 sm:px-2.5 py-1 rounded-md sm:rounded-lg font-bold flex items-center gap-1 shadow-sm transition"
                   >
                     <span>+</span> Add New Tank
                   </button>
@@ -538,7 +538,7 @@ export default function VehicleBooking({ siteId, tanks: initialTanks = [], billI
                   type="button"
                   onClick={() => saveVehicle(v.id)}
                   disabled={submitting}
-                  className="btn-success text-sm px-6 py-2.5 font-bold shadow-sm"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm px-4 sm:px-6 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold shadow-sm transition"
                 >
                   {submitting ? 'Saving...' : 'Save Vehicle Details'}
                 </button>
@@ -560,7 +560,7 @@ export default function VehicleBooking({ siteId, tanks: initialTanks = [], billI
       <button
         type="button"
         onClick={handleAddNewVehicle}
-        className="btn-primary w-full text-sm font-bold py-2.5 flex items-center justify-center gap-2 shadow-sm"
+        className="bg-slate-900 hover:bg-slate-800 text-white w-full text-xs sm:text-sm font-bold py-2 sm:py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
       >
         <span>+</span> Add New Vehicle
       </button>

@@ -11,8 +11,9 @@ import { useSeedBill } from '../SeedBillContext';
 import PackingPage from '../packing/PackingPage';
 import PackingOutsideWorkers from '../packing/PackingOutsideWorkers';
 import MixedAllocation from './MixedAllocation';
+import AdditionalStockingReview from './AdditionalStockingReview';
 import { useMixedAllocationState } from './useMixedAllocationState';
-import { getAssignedVehicleIds } from './stockingUtils';
+import { getAssignedVehicleIds, aggregateTankStates, getPackingSourceTanks } from './stockingUtils';
 
 export default function SeedStocking({ siteId, stockingOrder = null, onStockingCompleted = null }) {
   const { user } = useAuth();
@@ -61,10 +62,48 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
   const [pendingOrders, setPendingOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Workflow Step State: 1 | 2 | 3 | 'completed'
+  // Workflow Step State: 1 | 2 | 3 | 4 | 'completed'
   const [step, setStep] = useState(1);
+  const [additionalStockingTanks, setAdditionalStockingTanks] = useState([]);
+  const [pendingNavigationIntent, setPendingNavigationIntent] = useState(null);
+  const [reviewedAllocationSignature, setReviewedAllocationSignature] = useState(null);
+  const [siteTanks, setSiteTanks] = useState([]);
 
+  const loadSiteTanks = async () => {
+    if (!siteId) return;
+    const [{ data, error }, { data: trailRecords, error: trailError }] = await Promise.all([
+      supabase
+        .from(TABLES.tanks)
+        .select('id, name, start_date, quantity, hatchery')
+        .eq('site_id', siteId),
+      supabase
+        .from(TABLES.trailNettingRecords)
+        .select('tank_id, date, final_count')
+        .eq('site_id', siteId)
+        .order('date', { ascending: true }),
+    ]);
+    if (error) {
+      console.error('loadSiteTanks error:', error);
+      return;
+    }
+    if (trailError) console.error('loadSiteTanks trail records error:', trailError);
+    const latestTrailByTank = new Map();
+    (trailRecords || []).forEach((record) => latestTrailByTank.set(String(record.tank_id), record));
+    if (data) {
+      setSiteTanks(data.map((tank) => {
+        const latestTrail = latestTrailByTank.get(String(tank.id));
+        return {
+          ...tank,
+          latest_trail_count: latestTrail?.final_count ?? null,
+          latest_trail_date: latestTrail?.date ?? null,
+        };
+      }));
+    }
+  };
 
+  useEffect(() => {
+    loadSiteTanks();
+  }, [siteId]);
 
   const [step1Data, setStep1Data] = useState(() => activeOrder?.van_plan || null);
   const [step2Data, setStep2Data] = useState(() => activeOrder?.stocking_status_data || null);
@@ -176,6 +215,182 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     }
   }
 
+  // --- New Unified Allocation Helpers ---
+  function buildFinalAllocationMap(currentActiveOrder, currentStep2Data) {
+    const finalMap = new Map();
+    const addAllocation = (tankName, quantity) => {
+      const rawName = String(tankName || '').trim();
+      const count = Number(quantity) || 0;
+      if (!rawName || count <= 0) return;
+      const key = rawName.toUpperCase();
+      const existing = finalMap.get(key);
+      finalMap.set(key, {
+        tankName: existing?.tankName || rawName,
+        currentCount: (Number(existing?.currentCount) || 0) + count,
+        status: 'completed',
+      });
+    };
+
+    // Process Packing Data
+    if (currentActiveOrder?.packing_data?.tanks) {
+      currentActiveOrder.packing_data.tanks.forEach(t => {
+        const rawName = String(t.name || t.id || '').trim();
+        if (!rawName) return;
+        const normKey = rawName.toUpperCase();
+        const originalQty = Number(t.quantity) || 0;
+        const returnedQty = Number(t.returnedQuantity) || 0;
+        const transferredQty = Number(t.transferredQuantity) || 0;
+        const finalQty = Math.max(0, originalQty - returnedQty - transferredQty);
+
+        const status = String(t.status || '');
+        const isFullReturn = status.includes('Returned') && finalQty === 0;
+        const isFullTransferSource = status.includes('Transferred') && finalQty === 0;
+
+        if (!isFullReturn && !isFullTransferSource && finalQty > 0) {
+          addAllocation(rawName, finalQty);
+        }
+
+        // Handle Transfer Destinations from Packing
+        if (t.transferredTo && transferredQty > 0) {
+          const destName = String(t.transferredTo).trim();
+          addAllocation(destName, transferredQty);
+        }
+      });
+    }
+
+    // Process Seed Van Data
+    if (currentStep2Data) {
+      const addAggregatedStates = (tankStates, transfers = []) => {
+        aggregateTankStates(tankStates, transfers).forEach(agg => {
+          if (!agg || !agg.tankName) return;
+          const isFullReturn = agg.status === 'returned' && agg.totalCount === 0;
+          const isFullTransferSource = agg.status === 'transferred' && agg.totalCount === 0;
+          if (!isFullReturn && !isFullTransferSource && agg.totalCount > 0) {
+            addAllocation(agg.tankName, agg.totalCount);
+          }
+        });
+      };
+
+      // Support the legacy single-vehicle shape as well as current per-vehicle data.
+      if (currentStep2Data.tankStates) {
+        addAggregatedStates(currentStep2Data.tankStates, currentStep2Data.transfers);
+      }
+
+      for (const [key, value] of Object.entries(currentStep2Data)) {
+        if (
+          key !== 'supervisorName' && key !== 'supervisorPhone' &&
+          key !== 'supervisorNumber' && key !== 'supervisorSignature' &&
+          key !== 'seedVanCompleted' && value && typeof value === 'object' && value.tankStates
+        ) {
+          addAggregatedStates(value.tankStates, value.transfers);
+        }
+      }
+    }
+    return finalMap;
+  }
+
+  // Reactively calculate detected active tanks based on the unified physical map
+  const detectedActiveTanks = useMemo(() => {
+    if (!siteTanks || siteTanks.length === 0) return [];
+
+    // Only evaluate if there's actual data to evaluate (Packing done or Van plan saved)
+    if (!activeOrder?.packing_data && !step2Data) return [];
+
+    const finalMap = buildFinalAllocationMap(activeOrder, step2Data);
+    const activeTanksToReview = [];
+    for (const [normKey, tState] of finalMap.entries()) {
+      if (tState.status === 'completed' && Number(tState.currentCount) > 0) {
+        const actualTankName = String(tState.tankName).trim();
+        const matchedTank = siteTanks.find(
+          (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
+        );
+        if (matchedTank && matchedTank.start_date && Number(matchedTank.quantity) > 0) {
+          activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
+        }
+      }
+    }
+    return activeTanksToReview;
+  }, [activeOrder, step2Data, siteTanks]);
+
+  function generateAllocationSignature(map) {
+    const keys = Array.from(map.keys()).sort();
+    const sigObj = keys.map(k => `${k}:${map.get(k).currentCount}`);
+    return sigObj.join('|');
+  }
+
+  function executeIntent(intent) {
+    if (intent === 'outside-workers') {
+      setStep(3);
+      if (seedMode === 'mixed-allocation') {
+        setSeedMode('outside-workers');
+      }
+    } else if (intent === 'outside-workers-packing') {
+      setStep(3);
+      setSeedMode('outside-workers-packing');
+    } else if (intent === 'mixed-allocation') {
+      setStep(1);
+      setSeedMode('mixed-allocation');
+    } else if (intent === 'vehicle-payments') {
+      setStep(1);
+      setSeedMode('vehicle-payments');
+    }
+  }
+
+  async function validateAndProceed(intent, orderOverride = activeOrder) {
+    const finalMap = buildFinalAllocationMap(orderOverride, step2Data);
+    const signature = generateAllocationSignature(finalMap);
+
+    if (signature === reviewedAllocationSignature) {
+      executeIntent(intent);
+      return;
+    }
+
+    const activeTanksToReview = [];
+    for (const tState of finalMap.values()) {
+      const matchedTank = siteTanks.find(
+        (tank) => String(tank.name).trim().toLowerCase() === String(tState.tankName).trim().toLowerCase()
+      );
+      if (matchedTank?.start_date && Number(matchedTank.quantity) > 0 && Number(tState.currentCount) > 0) {
+        activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
+      }
+    }
+
+    if (activeTanksToReview.length > 0) {
+      setAdditionalStockingTanks(activeTanksToReview);
+      setPendingNavigationIntent(intent);
+      setStep(4);
+    } else {
+      executeIntent(intent);
+    }
+  }
+
+  function handleConfirmAdditionalStocking() {
+    const finalMap = buildFinalAllocationMap(activeOrder, step2Data);
+    setReviewedAllocationSignature(generateAllocationSignature(finalMap));
+
+    if (pendingNavigationIntent === 'final-commit-blocked') {
+      toast.success("Additional Stocking confirmed. You may now complete the order.");
+      setStep(3);
+    } else if (pendingNavigationIntent) {
+      executeIntent(pendingNavigationIntent);
+    }
+    setPendingNavigationIntent(null);
+  }
+
+  function handleBackFromAdditionalStocking() {
+    if (pendingNavigationIntent === 'outside-workers-packing') {
+      setStep(1);
+      setSeedMode('packing');
+    } else if (pendingNavigationIntent === 'mixed-allocation') {
+      setStep(1);
+      setSeedMode('mixed-allocation');
+    } else {
+      setStep(2);
+    }
+    setPendingNavigationIntent(null);
+  }
+  // --- End New Helpers ---
+
   function getVehicleData(data, vId) {
     if (!data || !vId) return null;
     if (data[vId]) return data[vId];
@@ -230,7 +445,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     toast.success('Stocking Status saved for selected vehicle.');
   }
 
-  async function handleFinalComplete(step3Data) {
+  async function handleFinalComplete(step3Data, isConfirmedAdditional = false) {
     if (!activeOrder) return;
 
     // Safety check: Do not allow a Mixed order to become Completed earlier.
@@ -277,34 +492,13 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     //    so Trail Netting can discover stocked tanks via seed_entries.tank_id.
 
     // 3. Update tanks with stocked seed counts
-    // step2Data is keyed by vehicleId: { [vehicleId]: { tankStates, transfers, ... }, supervisorName, ... }
-    // Aggregate all tankStates from every vehicle entry
+    const finalAllocationMap = buildFinalAllocationMap(activeOrder, step2Data);
+
+    // Convert map to allTankStates object format for compatibility with the rest of the function
     const allTankStates = {};
-    if (step2Data) {
-      // Top-level tankStates (legacy / single-vehicle flat structure)
-      if (step2Data.tankStates && typeof step2Data.tankStates === 'object') {
-        Object.assign(allTankStates, step2Data.tankStates);
-      }
-      // Per-vehicle entries (current multi-vehicle structure)
-      for (const [key, value] of Object.entries(step2Data)) {
-        if (
-          key !== 'tankStates' &&
-          key !== 'transfers' &&
-          key !== 'returnBills' &&
-          key !== 'supervisorName' &&
-          key !== 'supervisorPhone' &&
-          key !== 'supervisorNumber' &&
-          key !== 'supervisorSignature' &&
-          key !== 'seedVanCompleted' &&
-          value &&
-          typeof value === 'object' &&
-          value.tankStates &&
-          typeof value.tankStates === 'object'
-        ) {
-          Object.assign(allTankStates, value.tankStates);
-        }
-      }
-    }
+    finalAllocationMap.forEach((val, key) => {
+      allTankStates[val.tankName] = val;
+    });
 
     // Include tanks explicitly selected in Outside Workers (step3Data)
     const owBatches = step3Data?.batches || [];
@@ -333,8 +527,36 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     if (Object.keys(allTankStates).length > 0) {
       const { data: siteTanks } = await supabase
         .from(TABLES.tanks)
-        .select('id, name')
+        .select('id, name, start_date, quantity, hatchery')
         .eq('site_id', siteId);
+
+      // Verify the signature hasn't changed since they reviewed it
+      const currentSignature = generateAllocationSignature(finalAllocationMap);
+      const isSignatureUnchanged = (currentSignature === reviewedAllocationSignature);
+
+      // Check for active tanks if signature changed
+      if (!isSignatureUnchanged) {
+        const activeTanksToReview = [];
+        for (const [key, tState] of Object.entries(allTankStates)) {
+          if (tState.status === 'completed' && Number(tState.currentCount) > 0) {
+            const actualTankName = String(tState.tankName || key).trim();
+            const matchedTank = siteTanks?.find(
+              (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
+            );
+            if (matchedTank?.start_date && Number(matchedTank.quantity) > 0) {
+              activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
+            }
+          }
+        }
+
+        if (activeTanksToReview.length > 0) {
+          toast.error("Tank allocation changed. Please re-review the additional stocking.");
+          setAdditionalStockingTanks(activeTanksToReview);
+          setPendingNavigationIntent('final-commit-blocked');
+          setStep(4);
+          return;
+        }
+      }
 
       const stockingDate = new Date().toISOString().slice(0, 10);
       for (const [key, tState] of Object.entries(allTankStates)) {
@@ -345,11 +567,28 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
           );
 
+          let newQuantity = tState.currentCount;
+          let newHatchery = activeOrder.hatchery || null;
+          let newStartDate = stockingDate;
+
+          if (matchedTank?.id && matchedTank.start_date && Number(matchedTank.quantity) > 0) {
+            // Preserving the existing start date!
+            newStartDate = matchedTank.start_date || stockingDate;
+            newQuantity = (Number(matchedTank.quantity) || 0) + Number(tState.currentCount);
+
+            const existingHatcheries = (matchedTank.hatchery || '').split(' + ').map(s => s.trim()).filter(Boolean);
+            const addingHatchery = activeOrder.hatchery ? activeOrder.hatchery.trim() : '';
+            if (addingHatchery && !existingHatcheries.includes(addingHatchery)) {
+              existingHatcheries.push(addingHatchery);
+            }
+            newHatchery = existingHatcheries.join(' + ');
+          }
+
           const tankData = {
-            quantity: tState.currentCount,
+            quantity: newQuantity,
             seed_type: activeOrder.seed_type || 'Vannamei',
-            hatchery: activeOrder.hatchery || null,
-            start_date: stockingDate,
+            hatchery: newHatchery,
+            start_date: newStartDate,
           };
 
           let resolvedTankId = matchedTank?.id || null;
@@ -366,7 +605,6 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               site_id: siteId,
               name: actualTankName,
               ...tankData,
-              status: 'active', // default status
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }).select();
@@ -405,6 +643,9 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     }
 
     // 4. Record timeline milestones
+
+    // Refresh authoritative tank data immediately so same-session stockings have fresh data
+    await loadSiteTanks();
     await autosaveBillStep(
       supabase,
       TABLES,
@@ -536,83 +777,84 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* GLOBAL BACK BUTTON (Always at the very top) */}
-      {seedMode !== 'packing' && seedMode !== 'outside-workers-packing' && seedMode !== 'mixed-allocation' && (
-        <div>
-          <button
-            type="button"
-            onClick={() => {
-              if (step === 3) setStep(2);
-              else if (step === 2) setStep(1);
-              else setSeedMode('vehicle-payments');
-            }}
-            className="flex items-center gap-1.5 text-sm font-bold"
-            style={{ color: '#000', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-          >
-            <span style={{ color: '#000', fontSize: '1.1rem' }}>←</span>
-            <span style={{ color: '#000' }}>Back</span>
-          </button>
+      {/* GLOBAL BACK BUTTON (Always at the very top left) */}
+      <div className="flex items-center">
+        <button
+          type="button"
+          onClick={() => {
+            if (seedMode === 'mixed-allocation') setSeedMode('vehicle-payments');
+            else if (seedMode === 'packing') setSeedMode('vehicle-payments');
+            else if (seedMode === 'outside-workers' || seedMode === 'outside-workers-packing') setSeedMode('vehicle-payments');
+            else if (step === 3) setStep(2);
+            else if (step === 2) setStep(1);
+            else setSeedMode('vehicle-payments');
+          }}
+          className="flex items-center gap-1.5 text-sm font-bold text-slate-800 hover:text-black transition"
+        >
+          <span className="text-lg leading-none">←</span>
+          <span>Back</span>
+        </button>
+      </div>
+
+      {/* SEED STOCKING WRAPPER (Header ONLY) */}
+      <div className="card p-4 sm:p-5 shadow-sm border bg-white rounded-2xl" style={{ borderColor: 'var(--color-border)' }}>
+        <h2 className="text-xl font-extrabold flex items-center gap-2">
+          <span>🌱</span> Seed Stocking Module
+        </h2>
+        <p className="text-xs text-text-secondary mt-1">
+          {step === 'completed_summary'
+            ? `Completed Bill: ${completedBillData?.bill_number || activeOrder?.bill_number}`
+            : activeOrder
+              ? `Order: ${activeOrder.bill_number} · ${activeOrder.hatchery || 'Hatchery N/A'}`
+              : 'Select a pending order to start'}
+        </p>
+      </div>
+
+      {/* WORKFLOW TABS (Below header, compact, single row) */}
+      {step !== 'completed_summary' && activeOrder && (
+        <div className="flex w-full items-center gap-1.5 sm:gap-2 pb-2">
+          {[
+            { id: 'packing', label: 'Packing' },
+            { id: 'van-plan', label: 'Seed Van Plan' },
+            { id: 'mixed', label: 'Mixed' },
+          ].map((tab) => {
+            let active = false;
+            if (tab.id === 'packing' && seedMode === 'packing') active = true;
+            else if (tab.id === 'mixed' && (seedMode === 'mixed-allocation' || mixedState.isMixed)) active = true;
+            else if (tab.id === 'van-plan' && seedMode !== 'packing' && seedMode !== 'mixed-allocation' && !mixedState.isMixed) active = true;
+
+            const isMixedActive = seedMode === 'mixed-allocation' || mixedState.isMixed;
+            const isDisabled = isMixedActive && tab.id !== 'mixed';
+
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => {
+                  if (isDisabled) return;
+                  if (tab.id === 'packing') {
+                    setSeedMode('packing');
+                  } else if (tab.id === 'van-plan') {
+                    setSeedMode('van-plan');
+                    setStep(1);
+                  } else if (tab.id === 'mixed') {
+                    setSeedMode('mixed-allocation');
+                  }
+                }}
+                className={`flex-1 sm:flex-none text-center px-1 sm:px-4 py-2 rounded-xl text-[11px] sm:text-sm font-bold transition whitespace-nowrap border ${active
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                    : isDisabled
+                      ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       )}
-
-      {/* SEED STOCKING WRAPPER (Header, Tabs, Dropdown) */}
-      <div className="card p-4 shadow-sm border" style={{ borderColor: 'var(--color-border)' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-extrabold flex items-center gap-2">
-              <span>🌱</span> Seed Stocking Module
-            </h2>
-            <p className="text-xs text-text-secondary">
-              {step === 'completed_summary'
-                ? `Completed Bill: ${completedBillData?.bill_number || activeOrder?.bill_number}`
-                : activeOrder
-                  ? `Order: ${activeOrder.bill_number} · ${activeOrder.hatchery || 'Hatchery N/A'}`
-                  : 'Select a pending order to start'}
-            </p>
-          </div>
-
-          {step !== 'completed_summary' && seedMode !== 'mixed-allocation' && !mixedState.isMixed && (
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { id: 'packing', label: 'Packing' },
-                { id: 'van-plan', label: 'Seed Van Plan' },
-                { id: 'outside-workers', label: 'Outside Workers' },
-              ].map((tab) => {
-                let active = false;
-                if (tab.id === 'packing' && seedMode === 'packing') active = true;
-                else if (tab.id === 'van-plan' && seedMode !== 'packing' && step !== 3) active = true;
-                else if (tab.id === 'outside-workers' && (seedMode === 'outside-workers' || step === 3) && seedMode !== 'packing') active = true;
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => {
-                      if (tab.id === 'packing') {
-                        setSeedMode('packing');
-                      } else if (tab.id === 'van-plan') {
-                        setSeedMode('van-plan');
-                        setStep(1);
-                      } else if (tab.id === 'outside-workers') {
-                        setSeedMode('outside-workers');
-                        setStep(3);
-                      }
-                    }}
-                    className="px-4 py-2 rounded-[8px] text-sm font-bold transition border"
-                    style={{
-                      background: active ? 'var(--color-primary)' : 'var(--color-surface)',
-                      color: active ? '#fff' : 'var(--color-text-secondary)',
-                      borderColor: active ? 'var(--color-primary)' : 'var(--color-border)',
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
 
       {loading ? (
         <p className="text-sm text-text-muted p-4">Loading pending stocking orders...</p>
@@ -1013,21 +1255,23 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             </button>
           </div>
         </div>
-      ) : (
+      ) : activeOrder ? (
         <div className="space-y-6">
 
           {/* Mixed Allocation */}
-          {seedMode === 'mixed-allocation' && activeOrder && (
+          {step !== 4 && seedMode === 'mixed-allocation' && activeOrder && (
             <MixedAllocation
               activeOrder={activeOrder}
               vehicles={vehicles}
               siteId={siteId}
+              detectedActiveTanks={detectedActiveTanks}
+              onProceedToReview={() => validateAndProceed('outside-workers')}
               onContinuePacking={() => setSeedMode('packing')}
               onContinueSeedVan={() => {
-                setSeedMode('van-plan');
                 setStep(1);
+                setSeedMode('van-plan');
               }}
-              onProceedToOutsideWorkers={() => setSeedMode('outside-workers')}
+              onProceedToOutsideWorkers={() => validateAndProceed('outside-workers')}
               onBack={() => setSeedMode('vehicle-payments')}
             />
           )}
@@ -1057,30 +1301,29 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
           )}
 
           {/* Render Packing */}
-          {seedMode === 'packing' && activeOrder && (
+          {step !== 4 && seedMode === 'packing' && activeOrder && (
             <PackingPage
-              initialTanks={activeOrder?.selected_tanks || []}
+              initialTanks={getPackingSourceTanks(activeOrder, orderForm?.tanks || [])}
               tankQtys={getEffectivePackingQtys()}
-              activeOrder={activeOrder || activeBill}
+              activeOrder={activeOrder}
               vehicles={vehicles}
-              onBack={() => mixedState.isMixed ? setSeedMode('mixed-allocation') : setSeedMode('vehicle-payments')}
+              detectedActiveTanks={detectedActiveTanks}
+              onProceedToReview={() => validateAndProceed(activeOrder?.current_stage === 'mixed-allocation' ? 'mixed-allocation' : 'outside-workers-packing')}
               onGoToHistory={(updatedBill) => {
-                if (updatedBill) {
-                  setActiveBill(updatedBill);
-                }
+                if (updatedBill) setActiveBill(updatedBill);
                 if (activeOrder?.current_stage === 'mixed-allocation') {
                   setSeedMode('mixed-allocation');
                 } else {
-                  setSeedMode('outside-workers-packing');
+                  validateAndProceed('outside-workers-packing', updatedBill || activeOrder);
                 }
               }}
+              onBack={() => mixedState.isMixed ? setSeedMode('mixed-allocation') : setSeedMode('list')}
             />
           )}
 
           {/* Render Step 1: Seed Van Plan */}
           {seedMode !== 'packing' && seedMode !== 'outside-workers-packing' && seedMode !== 'outside-workers' && seedMode !== 'mixed-allocation' && step === 1 && activeOrder && (
             <div className="space-y-6">
-              <button onClick={() => mixedState.isMixed ? setSeedMode('mixed-allocation') : setSeedMode('vehicle-payments')} className="text-sm font-bold text-text-muted hover:text-black flex items-center gap-1">← Back</button>
               {loadingVehicles ? (
                 <p className="text-xs text-text-muted mt-2">Loading vehicles…</p>
               ) : vehicles.length === 0 ? (
@@ -1111,7 +1354,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
                       setSelectedVehicleId(vehiclesForVanPlan[0].id);
                     }
                   }}
-                  className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
+                  className="bg-slate-900 hover:bg-slate-800 text-white w-full text-sm sm:text-base py-2.5 sm:py-3.5 rounded-[8px] sm:rounded-[10px] font-bold shadow-sm sm:shadow-lg flex items-center justify-center gap-1.5 sm:gap-2 mt-6 transition-colors"
                 >
                   <span>Continue to Stocking Status</span>
                   <span>➔</span>
@@ -1124,7 +1367,6 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
           {/* Render Step 2: Stocking Status */}
           {seedMode !== 'packing' && seedMode !== 'outside-workers-packing' && seedMode !== 'outside-workers' && seedMode !== 'mixed-allocation' && step === 2 && activeOrder && (
             <div className="space-y-6">
-              <button onClick={() => setStep(1)} className="text-sm font-bold text-text-muted hover:text-black flex items-center gap-1">← Back</button>
               {loadingVehicles ? (
                 <p className="text-xs text-text-muted mt-2">Loading vehicles…</p>
               ) : vehiclesForVanPlan.filter((v) => !!step1Data?.[v.id]).length === 0 ? (
@@ -1149,7 +1391,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
               {/* Common Supervisor Details (Appears only after all vehicles are saved) */}
               {vehiclesForVanPlan.length > 0 && vehiclesForVanPlan.every(v => !!step2Data?.[v.id]) && (
-                <div className="card p-6 border shadow-sm mt-6">
+                <div className="card p-4 sm:p-6 border shadow-sm mt-6">
                   <h4 className="font-extrabold text-lg text-primary border-b pb-2 mb-4">✍️ Common Supervisor Sign-off</h4>
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1187,16 +1429,49 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
                 </div>
               )}
 
-              {/* Continue to Outside Workers (Only for non-mixed modes) */}
               {!isMixed && isSupervisorSaved && (
-                <button
-                  type="button"
-                  onClick={() => setStep(3)}
-                  className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
-                >
-                  <span>Continue to Outside Workers</span>
-                  <span>➔</span>
-                </button>
+                detectedActiveTanks.length > 0 ? (
+                  <>
+                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                      <div className="bg-white rounded-[16px] shadow-2xl max-w-sm w-full p-5 sm:p-6 text-center space-y-3">
+                        <div className="mx-auto bg-cyan-50 text-cyan-600 w-12 h-12 rounded-full flex items-center justify-center mb-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <h4 className="font-extrabold text-[17px] text-slate-800 leading-snug">Existing Active Tank Detected</h4>
+                        <p className="text-[13px] font-medium text-slate-500 leading-relaxed px-2">
+                          {detectedActiveTanks.length} tank(s) already have an active seed cycle. Please review the additional stocking before continuing.
+                        </p>
+                        <div className="pt-3 flex flex-col gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => validateAndProceed('outside-workers')}
+                            className="bg-slate-900 hover:bg-slate-800 text-white w-full py-2.5 rounded-[10px] font-bold shadow-sm transition-colors text-[13px]"
+                          >
+                            Proceed to Additional Stocking
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsSupervisorSaved(false)}
+                            className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 w-full py-2.5 rounded-[10px] font-bold transition-colors text-[13px]"
+                          >
+                            Go Back
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => validateAndProceed('outside-workers')}
+                    className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
+                  >
+                    <span>Continue to Outside Workers</span>
+                    <span>➔</span>
+                  </button>
+                )
               )}
             </div>
           )}
@@ -1206,7 +1481,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
 
           {/* Render Standalone Outside Workers (direct tab) */}
-          {seedMode === 'outside-workers' && (
+          {step !== 4 && seedMode === 'outside-workers' && (
             <div className="mt-6">
               <OutsideWorkersStep3
                 initialSupervisorName={commonSupervisorName}
@@ -1234,6 +1509,33 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               step2Data={step2Data}
             />
           )}
+
+          {/* Render Step 4: Additional Stocking Review */}
+          {step === 4 && additionalStockingTanks.length > 0 && (
+            <AdditionalStockingReview
+              tanks={additionalStockingTanks}
+              activeOrder={activeOrder}
+              step2Data={step2Data}
+              vehicles={vehicles}
+              onConfirm={handleConfirmAdditionalStocking}
+              onBack={handleBackFromAdditionalStocking}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="card p-8 sm:p-12 shadow-sm border bg-white rounded-[16px] text-center flex flex-col items-center justify-center space-y-4">
+          <div className="text-4xl mb-2">🌱</div>
+          <h3 className="text-lg font-extrabold text-slate-800">No Pending Seed Order</h3>
+          <p className="text-sm font-semibold text-slate-500 max-w-sm leading-relaxed">
+            Complete a Seed Order first to start Seed Stocking.
+          </p>
+          <button
+            type="button"
+            onClick={() => setSeedMode('list')}
+            className="mt-4 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-[10px] font-bold shadow-sm transition-colors text-sm"
+          >
+            Go to Seed Order
+          </button>
         </div>
       )}
     </div>

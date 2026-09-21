@@ -205,7 +205,7 @@ export default function RequestPayment({
       toast.error('No recipient selected');
       return null;
     }
-    
+
     if (!bankForm.ifsc || !bankForm.accountNumber || !bankForm.bankName) {
       toast.error('Fill IFSC, Account Number, and Bank Name');
       return null;
@@ -241,7 +241,7 @@ export default function RequestPayment({
       .from(TABLES.hatcheryBankAccounts)
       .insert(newBankPayload)
       .select();
-    
+
     if (nbErr) {
       toast.error('Failed to save bank account');
       return null;
@@ -264,7 +264,7 @@ export default function RequestPayment({
     }
     const formNormAcct = (bankForm.accountNumber || '').trim().replace(/\s+/g, '');
     const formNormIfsc = (bankForm.ifsc || '').trim().toUpperCase().replace(/\s+/g, '');
-    
+
     const { data: existing } = await supabase
       .from(TABLES.hatcheryBankAccounts)
       .select('*')
@@ -311,7 +311,7 @@ export default function RequestPayment({
     }
 
     const remBal = Math.max(0, currentRemainingBalance - advAmount);
-    
+
     let finalBankAccountId = bankAccountId;
 
     if (advanceMode === 'bank' && entryMethod === 'manual') {
@@ -425,25 +425,7 @@ export default function RequestPayment({
       {enableCash && (
         <div className="space-y-4">
           <div className="border rounded-[12px] p-4 space-y-4" style={{ borderColor: 'var(--color-border)' }}>
-            <button
-              type="button"
-              className="btn w-full font-bold shadow-sm"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
-              onClick={() => setShowCashBalance(true)}
-            >
-              Check Balance
-            </button>
-            {showCashBalance && (
-              <div
-                className="rounded-[8px] px-3 py-2 flex items-center gap-2"
-                style={{ background: 'var(--color-info-bg)' }}
-              >
-                <span>💳</span>
-                <span className="text-[13px] font-semibold" style={{ color: 'var(--color-info)' }}>
-                  Current Remaining Balance: ₹{currentRemainingBalance.toLocaleString('en-IN')}
-                </span>
-              </div>
-            )}
+
             <input
               type="number"
               className="field"
@@ -466,23 +448,23 @@ export default function RequestPayment({
 
           {cashTxns.length > 0 && (
             <LedgerTable
-            title="Cash Payment Table"
-            subtitle="List of advance cash requests"
-            color="var(--color-info)"
-            icon="💸"
-            emptyText="No cash payments generated yet."
-            columns={['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Edit']}
-            rows={cashTxns.map((t) => [
-              <span className="text-xs font-bold">{shortId(t.id)}</span>,
-              <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
-              <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
-              <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
-              <StatusChip label={t.status || 'requested'} color={t.status === 'completed' ? 'var(--color-success)' : 'var(--color-warning)'} />,
-              <button onClick={() => editCash(t)} className="text-xs font-semibold" style={{ color: 'var(--color-info)' }}>
-                ✎ Edit
-              </button>,
-            ])}
-          />
+              title="Cash Payment Table"
+              subtitle="List of advance cash requests"
+              color="var(--color-info)"
+              icon="💸"
+              emptyText="No cash payments generated yet."
+              columns={['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Edit']}
+              rows={cashTxns.map((t) => [
+                <span className="text-xs font-bold">{shortId(t.id)}</span>,
+                <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
+                <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
+                <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
+                <StatusChip label={t.status || 'requested'} color={t.status === 'completed' ? 'var(--color-success)' : 'var(--color-warning)'} />,
+                <button onClick={() => editCash(t)} className="text-xs font-semibold" style={{ color: 'var(--color-info)' }}>
+                  ✎ Edit
+                </button>,
+              ])}
+            />
           )}
         </div>
       )}
@@ -514,52 +496,52 @@ export default function RequestPayment({
 
             <p className="text-[13px] font-semibold text-text-secondary">Select Payment Method</p>
             <div className="grid grid-cols-2 gap-3">
-            <ModeTile
-              active={advanceMode === 'upi'}
-              onClick={() => {
-                setAdvanceMode('upi');
-                setEntryMethod(null);
-              }}
-              icon="🔳"
-              label="UPI"
-              color="var(--color-success)"
-            />
-            <ModeTile
-              active={advanceMode === 'bank'}
-              onClick={() => {
-                setAdvanceMode('bank');
-                setEntryMethod('manual');
-              }}
-              icon="🏦"
-              label="Bank Transfer"
-              color="var(--color-info)"
-            />
-          </div>
-
-          {advanceMode === 'upi' && (
-            <div>
-              <input
-                type="text"
-                className="field"
-                placeholder="Enter UPI ID"
-                value={upiIdInput}
-                onChange={(e) => setUpiIdInput(e.target.value)}
+              <ModeTile
+                active={advanceMode === 'upi'}
+                onClick={() => {
+                  setAdvanceMode('upi');
+                  setEntryMethod(null);
+                }}
+                icon="🔳"
+                label="UPI"
+                color="var(--color-success)"
+              />
+              <ModeTile
+                active={advanceMode === 'bank'}
+                onClick={() => {
+                  setAdvanceMode('bank');
+                  setEntryMethod('manual');
+                }}
+                icon="🏦"
+                label="Bank Transfer"
+                color="var(--color-info)"
               />
             </div>
-          )}
-          {advanceMode === 'bank' && (
-            <BankDetails
-              entryMethod={entryMethod || 'manual'}
-              setEntryMethod={(m) => {
-                setEntryMethod(m);
-                if (m !== 'manual') setSelectedBankId(null);
-              }}
-              form={bankForm}
-              setForm={setBankForm}
-              onAddBank={handleSaveRecipientBank}
-              addBankLabel={type === 'outside_worker' ? 'Add Bank to Supplier' : 'Add Bank to Hatchery'}
-            />
-          )}
+
+            {advanceMode === 'upi' && (
+              <div>
+                <input
+                  type="text"
+                  className="field"
+                  placeholder="Enter UPI ID"
+                  value={upiIdInput}
+                  onChange={(e) => setUpiIdInput(e.target.value)}
+                />
+              </div>
+            )}
+            {advanceMode === 'bank' && (
+              <BankDetails
+                entryMethod={entryMethod || 'manual'}
+                setEntryMethod={(m) => {
+                  setEntryMethod(m);
+                  if (m !== 'manual') setSelectedBankId(null);
+                }}
+                form={bankForm}
+                setForm={setBankForm}
+                onAddBank={handleSaveRecipientBank}
+                addBankLabel={type === 'outside_worker' ? 'Add Bank to Supplier' : 'Add Bank to Hatchery'}
+              />
+            )}
 
             <button
               type="button"
@@ -569,62 +551,62 @@ export default function RequestPayment({
             >
               Submit Request
             </button>
-        </div>
+          </div>
 
-        {advanceTxns.length > 0 && (
-          <LedgerTable
-            title="Advance Bank Payment Table"
-          subtitle="Proof and Machine IDs Book unlock only after the requested amount is completed"
-          color="var(--color-success)"
-          icon="🧾"
-          emptyText="No advance bank payments generated yet."
-          columns={hideMachineIdBook
-            ? ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof']
-            : ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof', 'Machine IDs Book']}
-          rows={advanceTxns.map((t) => {
-            const done = t.status === 'completed';
-            const cells = [
-              <span className="text-xs font-bold">{shortId(t.id)}</span>,
-              <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
-              <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
-              <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
-              done ? (
-                <StatusChip label="Completed" color="var(--color-success)" />
-              ) : (
-                <button
-                  onClick={() => completeAdvance(t)}
-                  className="text-xs font-semibold"
-                  style={{ color: 'var(--color-warning)' }}
-                >
-                  ✓ Requested
-                </button>
-              ),
-              done ? (
-                <ProofPreview label={t.proof_url ?? 'Payment proof'} />
-              ) : (
-                <span className="text-xs text-text-muted">Visible after completion</span>
-              ),
-            ];
-            if (!hideMachineIdBook) {
-              cells.push(
-                done ? (
-                  <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                    {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
-                    <input
-                      type="checkbox"
-                      checked={!!t.registered_in_machine_ids_book}
-                      onChange={(e) => toggleMachineBook(t, e.target.checked)}
-                    />
-                  </label>
-                ) : (
-                  <span className="text-xs text-text-muted">Locked</span>
-                )
-              );
-            }
-            return cells;
-          })}
-        />
-        )}
+          {advanceTxns.length > 0 && (
+            <LedgerTable
+              title="Advance Bank Payment Table"
+              subtitle="Proof and Machine IDs Book unlock only after the requested amount is completed"
+              color="var(--color-success)"
+              icon="🧾"
+              emptyText="No advance bank payments generated yet."
+              columns={hideMachineIdBook
+                ? ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof']
+                : ['Request ID', 'Time', 'Amount', 'Remaining Balance', 'Status', 'Payment Proof', 'Machine IDs Book']}
+              rows={advanceTxns.map((t) => {
+                const done = t.status === 'completed';
+                const cells = [
+                  <span className="text-xs font-bold">{shortId(t.id)}</span>,
+                  <span className="text-xs">{fmtDateTime(t.created_at)}</span>,
+                  <span className="text-xs font-extrabold">₹{Number(t.amount).toLocaleString('en-IN')}</span>,
+                  <span className="text-xs font-semibold text-text-secondary">{t.remaining_balance != null ? `₹${Number(t.remaining_balance).toLocaleString('en-IN')}` : '—'}</span>,
+                  done ? (
+                    <StatusChip label="Completed" color="var(--color-success)" />
+                  ) : (
+                    <button
+                      onClick={() => completeAdvance(t)}
+                      className="text-xs font-semibold"
+                      style={{ color: 'var(--color-warning)' }}
+                    >
+                      ✓ Requested
+                    </button>
+                  ),
+                  done ? (
+                    <ProofPreview label={t.proof_url ?? 'Payment proof'} />
+                  ) : (
+                    <span className="text-xs text-text-muted">Visible after completion</span>
+                  ),
+                ];
+                if (!hideMachineIdBook) {
+                  cells.push(
+                    done ? (
+                      <label className="flex items-center gap-2 text-xs font-extrabold" style={{ color: t.registered_in_machine_ids_book ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                        {t.registered_in_machine_ids_book ? 'Yes' : 'No'}
+                        <input
+                          type="checkbox"
+                          checked={!!t.registered_in_machine_ids_book}
+                          onChange={(e) => toggleMachineBook(t, e.target.checked)}
+                        />
+                      </label>
+                    ) : (
+                      <span className="text-xs text-text-muted">Locked</span>
+                    )
+                  );
+                }
+                return cells;
+              })}
+            />
+          )}
         </div>
       )}
     </div>

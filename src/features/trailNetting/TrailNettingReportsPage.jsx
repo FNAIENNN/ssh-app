@@ -115,9 +115,14 @@ export default function TrailNettingReportsPage() {
 
     const cellStyles = liveCells.map((cell) => {
       const rect = cell.getBoundingClientRect();
+      const compStyle = window.getComputedStyle(cell);
       return {
         width: rect.width,
         height: rect.height,
+        padding: compStyle.padding,
+        fontSize: compStyle.fontSize,
+        whiteSpace: compStyle.whiteSpace,
+        wordBreak: compStyle.wordBreak
       };
     });
 
@@ -153,7 +158,7 @@ export default function TrailNettingReportsPage() {
         clonedTable.style.width = `${fullWidth}px`;
         clonedTable.style.minWidth = `${fullWidth}px`;
         clonedTable.style.maxWidth = 'none';
-        clonedTable.style.tableLayout = 'fixed';
+        // DO NOT set tableLayout = 'fixed' because the first row has colSpan={39}, which breaks column distribution
 
         const clonedRows = Array.from(clonedTable.querySelectorAll('tr'));
         const clonedCells = Array.from(clonedTable.querySelectorAll('th, td'));
@@ -162,7 +167,6 @@ export default function TrailNettingReportsPage() {
           if (rowHeights[i]) {
             row.style.height = `${rowHeights[i]}px`;
             row.style.minHeight = `${rowHeights[i]}px`;
-            row.style.maxHeight = `${rowHeights[i]}px`;
           }
         });
 
@@ -170,7 +174,14 @@ export default function TrailNettingReportsPage() {
           if (cellStyles[i]) {
             cell.style.width = `${cellStyles[i].width}px`;
             cell.style.minWidth = `${cellStyles[i].width}px`;
-            cell.style.maxWidth = `${cellStyles[i].width}px`;
+            cell.style.padding = cellStyles[i].padding;
+            cell.style.fontSize = cellStyles[i].fontSize;
+            cell.style.whiteSpace = cellStyles[i].whiteSpace;
+            cell.style.wordBreak = cellStyles[i].wordBreak;
+
+            // Remove maxWidth to prevent clipping if canvas fonts render slightly wider
+            cell.style.maxWidth = 'none';
+
             if (!cell.rowSpan || cell.rowSpan <= 1) {
               cell.style.height = `${cellStyles[i].height}px`;
             }
@@ -472,32 +483,32 @@ export default function TrailNettingReportsPage() {
       </div>
 
       {/* Export & Download Controls */}
-      <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-lg flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-slate-900 text-white rounded-xl p-3 sm:p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h4 className="font-extrabold text-base text-white">Download & Export Options</h4>
-          <p className="text-xs text-slate-400">
-            Export the complete Trail Netting Report preserving the exact table structure and data format.
+          <h4 className="font-extrabold text-sm sm:text-base text-white">Download & Export</h4>
+          <p className="text-[11px] sm:text-xs text-slate-400 mt-0.5">
+            Export the complete Trail Netting Report.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="grid grid-cols-2 md:flex items-center gap-2 w-full md:w-auto">
           <button
             onClick={exportPDF}
-            className="btn-primary bg-rose-600 hover:bg-rose-700 border-none text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-1.5"
+            className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] sm:text-xs font-bold px-2 py-2 sm:px-4 sm:py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
           >
-            📄 Download PDF
+            📄 PDF
           </button>
           <button
             onClick={exportExcel}
-            className="btn-primary bg-emerald-600 hover:bg-emerald-700 border-none text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-1.5"
+            className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] sm:text-xs font-bold px-2 py-2 sm:px-4 sm:py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
           >
-            📊 Download Excel (.xlsx)
+            📊 Excel
           </button>
           <button
             onClick={() => exportImage('png')}
-            className="btn-primary bg-blue-600 hover:bg-blue-700 border-none text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-1.5"
+            className="col-span-2 md:col-span-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] sm:text-xs font-bold px-2 py-2 sm:px-4 sm:py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors"
           >
-            🖼️ Download Image (PNG)
+            🖼️ Image
           </button>
         </div>
       </div>
@@ -507,7 +518,7 @@ export default function TrailNettingReportsPage() {
         <div className="pt-2">
           <button
             onClick={handleCompleted}
-            className="btn-primary w-full py-4 text-lg font-black flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transition bg-emerald-600 hover:bg-emerald-700 border-none text-white rounded-xl"
+            className="w-full py-3 sm:py-4 text-sm sm:text-base font-bold sm:font-extrabold flex items-center justify-center gap-2 shadow-sm hover:shadow-md transition bg-slate-900 hover:bg-slate-800 text-white rounded-xl"
           >
             ✅ Completed
           </button>

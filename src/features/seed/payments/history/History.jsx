@@ -149,7 +149,7 @@ export default function History({ siteId }) {
   if (selectedBill) {
     if (loadingDetail) {
       return (
-        <div className="max-w-4xl mx-auto p-8 text-center">
+        <div className="max-w-4xl mx-auto p-4 sm:p-8 text-center">
           <p className="text-sm text-text-muted animate-pulse">Loading bill details…</p>
         </div>
       );
@@ -218,7 +218,7 @@ export default function History({ siteId }) {
       {loading ? (
         <p className="text-sm text-text-muted p-4 animate-pulse">Loading history…</p>
       ) : filteredBills.length === 0 ? (
-        <div className="card p-8 text-center space-y-2 border-dashed border-2">
+        <div className="card p-4 sm:p-8 text-center space-y-2 border-dashed border-2" style={{ borderColor: 'var(--color-border)' }}>
           <div className="text-4xl">📂</div>
           <p className="font-bold">No completed bills found</p>
           <p className="text-xs text-text-muted">
@@ -236,7 +236,7 @@ export default function History({ siteId }) {
               <div
                 key={b.id}
                 onClick={() => openBill(b)}
-                className="card p-5 border cursor-pointer hover:shadow-lg transition space-y-3"
+                className="card p-4 sm:p-5 border cursor-pointer hover:shadow-lg transition space-y-3"
                 style={{ borderColor: 'var(--color-border)' }}
               >
                 <div className="flex items-center justify-between">

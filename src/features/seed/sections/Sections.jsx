@@ -74,19 +74,20 @@ export default function Sections() {
   return (
     <div className="space-y-5">
       {/* Sections */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="flex flex-wrap sm:grid sm:grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
         {sections.map((s) => (
-          <SectionCard
-            key={s.id}
-            section={s}
-            tanks={tanksBySection[s.id] ?? []}
-            active={activeSection?.id === s.id}
-            onSelect={(sec) => {
-              setActiveSection(sec);
-              selectSection(sec.id);
-              setActiveTank(null);
-            }}
-          />
+          <div key={s.id} className="flex-1 min-w-[30%] sm:min-w-0">
+            <SectionCard
+              section={s}
+              tanks={tanksBySection[s.id] ?? []}
+              active={activeSection?.id === s.id}
+              onSelect={(sec) => {
+                setActiveSection(sec);
+                selectSection(sec.id);
+                setActiveTank(null);
+              }}
+            />
+          </div>
         ))}
       </div>
 
@@ -100,8 +101,8 @@ export default function Sections() {
             border: '1px solid rgba(255,255,255,0.60)',
             borderRadius: 'var(--radius-lg)',
             boxShadow: 'var(--shadow-card)',
-            padding: '16px',
           }}
+          className="p-3 sm:p-4"
         >
           <p
             style={{
@@ -111,7 +112,7 @@ export default function Sections() {
           >
             Section {activeSection.name} — Tanks
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
             {(tanksBySection[activeSection.id] ?? []).map((t) => (
               <TankCard
                 key={t.id}

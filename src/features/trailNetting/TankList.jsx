@@ -4,6 +4,7 @@ import { supabase, TABLES } from '../../lib/supabaseClient';
 import { useSite } from '../../hooks/useSite';
 import { computeCadence, formatDate } from '../../hooks/useTrailNettingCadence';
 import { aggregateTankStates } from '../seed/payments/seedStocking/stockingUtils';
+import { buildTankCardData, currentCycleNettingRecords } from './tankCardData';
 import { Empty, Spinner } from '../../components/ui/State';
 import TrailNettingSettingsModal from './TrailNettingSettingsModal';
 import TrailNettingHistoryModal from './TrailNettingHistoryModal';
@@ -20,7 +21,9 @@ export default function TankList() {
   const [completedTanks, setCompletedTanks] = useState([]);
   const [records, setRecords] = useState({}); // tankId -> records[]
   const [reports, setReports] = useState({}); // tankId -> latest report
+  const [seedEntries, setSeedEntries] = useState([]);
   const [stockingTimes, setStockingTimes] = useState({}); // normalizedTankName -> latest billTime
+  const [showMenu, setShowMenu] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -64,6 +67,7 @@ export default function TankList() {
         const seedEntryTankIds = new Set(
           (sEntries ?? []).map((se) => se.tank_id || se.tank_name).filter(Boolean)
         );
+        setSeedEntries(sEntries ?? []);
 
         const allSiteTanks = tks ?? [];
         const siteTanksMap = new Map();
@@ -293,33 +297,50 @@ export default function TankList() {
   return (
     <div className="space-y-6">
       {/* Top Header & Settings Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900">Trail Netting</h1>
-          <p className="text-xs text-slate-500">
-            Completed Seed Order tanks ready for Trail Netting. Completed nettings move to History.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900">Trail Netting</h1>
+            <p className="text-xs text-slate-500 mt-1">
+              Completed Seed Order tanks ready for Trail Netting.
+            </p>
+          </div>
           <button
             onClick={() => navigate('/app/trail-netting/payments')}
-            className="btn-secondary text-xs font-bold px-3 py-2 flex items-center gap-1.5 border-emerald-300 text-emerald-900 bg-emerald-50 hover:bg-emerald-100"
+            className="btn-secondary text-xs font-bold px-3 py-1.5 flex items-center gap-1.5 border-emerald-300 text-emerald-900 bg-emerald-50 hover:bg-emerald-100 rounded-lg self-start sm:self-auto"
           >
             💳 Payments
           </button>
+        </div>
+
+        <div className="absolute top-5 right-5 sm:static">
           <button
-            onClick={() => navigate('/app/trail-netting/reports')}
-            className="btn-secondary text-xs font-bold px-3 py-2 flex items-center gap-1.5"
+            onClick={() => setShowMenu(!showMenu)}
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors flex items-center justify-center w-8 h-8"
           >
-            📊 View Reports Table
+            <span className="font-bold text-lg leading-none">⋮</span>
           </button>
-          <button
-            onClick={() => setShowSettingsModal(true)}
-            className="btn-primary text-xs font-bold px-3 py-2 flex items-center gap-1.5"
-          >
-            ⚙️ Trail Netting Settings
-          </button>
+
+          {showMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+              <div className="absolute right-5 sm:right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg z-50 py-1 overflow-hidden">
+                <button
+                  onClick={() => { setShowMenu(false); navigate('/app/trail-netting/reports'); }}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                >
+                  📊 View Reports Table
+                </button>
+                <div className="h-px bg-slate-100 w-full" />
+                <button
+                  onClick={() => { setShowMenu(false); setShowSettingsModal(true); }}
+                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                >
+                  ⚙️ Trail Netting Settings
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -447,33 +468,16 @@ export default function TankList() {
             }
 
             // For Active/Pending Tab: Filter records for the CURRENT cycle only
-            const tName = String(t.name || '').trim().toLowerCase();
-            const exactStockingTime = stockingTimes[tName];
-            const cycleStartTime = exactStockingTime || (t.start_date ? new Date(t.start_date).getTime() : 0);
-
-            const currentCycleRecords = allTankRecords.filter(r => new Date(r.date).getTime() >= cycleStartTime);
+            const currentCycleRecords = currentCycleNettingRecords(t, allTankRecords);
             const cadence = computeCadence({ startDate: t.start_date, records: currentCycleRecords });
-
-            const lastRec = currentCycleRecords[currentCycleRecords.length - 1];
-            const latestCountVal = lastRec?.final_count || '—';
-
-            let latestCountDate = '—';
-            if (lastRec?.date) {
-              latestCountDate = formatDate(lastRec.date);
-            } else if (exactStockingTime) {
-              latestCountDate = formatDate(new Date(exactStockingTime).toISOString());
-            } else if (t.start_date) {
-              latestCountDate = formatDate(t.start_date);
-            }
+            const cardData = buildTankCardData({ tank: t, seedEntries, records: allTankRecords, report: latestReport });
 
             return (
               <TankCardTN
                 key={t.id}
                 tank={t}
                 cadence={cadence}
-                latestCount={latestCountVal}
-                latestCountDate={latestCountDate}
-                nettingCount={currentCycleRecords.length}
+                cardData={cardData}
                 onNet={() => navigate(`/app/trail-netting/${t.id}/checklist`)}
               />
             );
@@ -514,136 +518,111 @@ function HistoryTankCardTN({ tank, report, recordsList, onViewReport }) {
   const docVal = report?.doc || cadence.day || '—';
 
   return (
-    <div className="rounded-2xl p-5 border border-emerald-200 bg-white shadow-card hover:shadow-md transition-all space-y-4">
-      {/* Header Row: Section & Tank Name */}
-      <div className="flex items-start justify-between">
+    <div className="h-full rounded-2xl p-4 border-2 border-slate-200 bg-slate-50/50 hover:border-slate-300 transition flex flex-col">
+      {/* Header Row: Tank Name & Status */}
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
             {tank.sections?.name ? `Section ${tank.sections.name}` : 'Tank'}
           </span>
-          <h3 className="text-xl font-black text-slate-900">
+          <h3 className="text-lg font-black text-slate-900 leading-tight">
             Tank {tank.name}
           </h3>
         </div>
-        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-          ✅ Netting Completed
+        <span className="shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+          Completed
         </span>
       </div>
 
-      {/* Tank Information Grid */}
-      <div className="grid grid-cols-2 gap-2 text-center pt-1">
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-          <p className="text-2xl font-black text-slate-900 font-mono">Day {docVal}</p>
-          <p className="text-[10px] font-extrabold uppercase text-slate-500">Days (DOC)</p>
-        </div>
-
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-          <p className="text-2xl font-black text-slate-900 font-mono">{tankRecords.length || 1}</p>
-          <p className="text-[10px] font-extrabold uppercase text-slate-500">Netting Count</p>
-        </div>
+      {/* Completed netting details follow the Harvest card label/value pattern. */}
+      <div className="space-y-1.5 text-xs text-slate-600 flex-1">
+        <CardRow label="DOC / Number of Days" value={`Day ${docVal}`} />
+        <CardRow label="Netting Count" value={tankRecords.length || 1} />
+        <CardRow label="Completed Count" value={latestCountVal !== '—' ? `${latestCountVal} Count/KG` : '—'} />
+        <CardRow label="Netting Date" value={latestCountDate} />
+        <CardRow label="Hatchery" value={tank.hatchery || '—'} />
       </div>
 
-      {/* Latest Sampling Information */}
-      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-1.5 text-xs text-slate-700">
-        <div className="flex justify-between items-center">
-          <span className="text-slate-500 font-semibold">Completed Count:</span>
-          <span className="font-extrabold font-mono text-emerald-700 text-sm">
-            {latestCountVal !== '—' ? `${latestCountVal} Count/KG` : '—'}
-          </span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-slate-500 font-semibold">Netting Date:</span>
-          <span className="font-bold text-slate-800">{latestCountDate}</span>
-        </div>
-        {tank.hatchery && (
-          <div className="flex justify-between items-center">
-            <span className="text-slate-500 font-semibold">Hatchery:</span>
-            <span className="font-bold text-slate-800 truncate max-w-[150px]">{tank.hatchery}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Action Button */}
-      <div className="pt-1">
+      {/* Bottom action retains the existing report callback. */}
+      <div className="mt-4 pt-3 border-t border-slate-200">
         <button
+          type="button"
           onClick={onViewReport}
-          className="btn-secondary w-full py-2.5 text-xs font-extrabold flex items-center justify-center gap-2 border-slate-300 text-slate-700 hover:bg-slate-100"
+          className="w-full flex items-center justify-between text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
         >
-          📊 View Completed Details & Report
+          <span>View Completed Details &amp; Report</span>
+          <span aria-hidden="true">→</span>
         </button>
       </div>
     </div>
   );
 }
 
-function TankCardTN({ tank, cadence, latestCount, latestCountDate, nettingCount, onNet }) {
+function TankCardTN({ tank, cadence, cardData, onNet }) {
   // Tank completed 45 days or more since seed stocking
   const reachedDay45 = cadence.day >= 45;
 
   return (
-    <div className="rounded-2xl p-5 border border-slate-200 bg-white shadow-card hover:shadow-md transition-all space-y-4">
-      {/* Header Row: Section & Tank Name */}
-      <div className="flex items-start justify-between">
+    <div className="h-full rounded-2xl p-4 border-2 border-slate-200 bg-slate-50/50 hover:border-slate-300 transition flex flex-col">
+      {/* Header Row: Tank Name & Status */}
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
             {tank.sections?.name ? `Section ${tank.sections.name}` : 'Tank'}
           </span>
-          <h3 className="text-xl font-black text-slate-900">
+          <h3 className="text-lg font-black text-slate-900 leading-tight">
             Tank {tank.name}
           </h3>
         </div>
+        <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${cadence.status === 'overdue'
+          ? 'bg-red-50 text-red-700 border-red-200'
+          : cadence.canNet
+            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+            : 'bg-slate-200 text-slate-600 border-slate-300'
+          }`}>
+          {cadence.status === 'overdue' ? 'Overdue' : cadence.canNet ? 'Eligible' : 'Active'}
+        </span>
       </div>
 
-      {/* Eligibility Alert (displayed ONLY when completed 45 days or more) */}
+      {/* Eligibility note (displayed ONLY when completed 45 days or more) */}
       {reachedDay45 && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-center gap-2 text-emerald-800 text-xs font-extrabold">
-          <span className="text-base">✨</span>
+        <div className="mb-3 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+          <span aria-hidden="true">✓</span>
           <span>Eligible for Trail Netting</span>
         </div>
       )}
 
-      {/* Tank Information Grid */}
-      <div className="grid grid-cols-2 gap-2 text-center pt-1">
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-          <p className="text-2xl font-black text-slate-900 font-mono">Day {cadence.day}</p>
-          <p className="text-[10px] font-extrabold uppercase text-slate-500">Number of Days</p>
-        </div>
-
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-          <p className="text-2xl font-black text-slate-900 font-mono">{nettingCount}</p>
-          <p className="text-[10px] font-extrabold uppercase text-slate-500">Netting Count</p>
-        </div>
+      {/* Tank details follow the Harvest card label/value pattern. */}
+      <div className="space-y-1.5 text-xs text-slate-600 flex-1">
+        <CardRow label="DOC / Number of Days" value={`Day ${cadence.day}`} />
+        <CardRow label="Seed Quantity" value={cardData.quantity ? `${Number(cardData.quantity).toLocaleString('en-IN')} PL` : '—'} />
+        <CardRow label="Feed" value={cardData.feed != null ? `${Number(cardData.feed).toLocaleString('en-IN')} KG` : '—'} />
+        <CardRow label="Latest Count" value={cardData.latestCount != null ? `${cardData.latestCount} Count/KG` : '—'} />
+        <CardRow label="Latest Count Date" value={formatDate(cardData.latestCountDate)} />
+        <CardRow label="Hatchery" value={cardData.hatchery} />
+        <CardRow label="Netting Count" value={cardData.nettingCount} />
       </div>
 
-      {/* Latest Sampling Information */}
-      <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-1.5 text-xs text-slate-700">
-        <div className="flex justify-between items-center">
-          <span className="text-slate-500 font-semibold">Latest Count:</span>
-          <span className="font-extrabold font-mono text-slate-900 text-sm">
-            {latestCount !== '—' ? `${latestCount} Count/KG` : '—'}
-          </span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-slate-500 font-semibold">Latest Count Date:</span>
-          <span className="font-bold text-slate-800">{latestCountDate}</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-slate-500 font-semibold">Feed:</span>
-          <span className="font-extrabold font-mono text-slate-900 text-sm">
-            {tank.feed != null ? `${tank.feed} KG` : '—'}
-          </span>
-        </div>
-      </div>
-
-      {/* Trail Netting Button */}
-      <div className="pt-1">
+      {/* Bottom action retains the existing navigation callback. */}
+      <div className="mt-4 pt-3 border-t border-slate-200">
         <button
+          type="button"
           onClick={onNet}
-          className="btn-primary w-full py-3 text-sm font-extrabold flex items-center justify-center gap-2 shadow-sm hover:shadow transition-all"
+          className="w-full flex items-center justify-between text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
         >
-          🥢 Trail Netting
+          <span>Trail Netting</span>
+          <span aria-hidden="true">→</span>
         </button>
       </div>
+    </div>
+  );
+}
+
+function CardRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <span className="shrink-0 text-slate-600">{label}:</span>
+      <span className="font-bold text-slate-900 text-right break-words">{value}</span>
     </div>
   );
 }

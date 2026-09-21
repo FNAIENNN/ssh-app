@@ -8,7 +8,7 @@ export default function SectionCard({ section, tanks = [], active, onSelect }) {
   return (
     <button
       onClick={() => onSelect?.(section)}
-      className="text-left w-full transition-all duration-200"
+      className="text-left w-full transition-all duration-200 p-2 sm:p-4 flex flex-col sm:block items-center sm:items-stretch"
       style={{
         background: active
           ? 'rgba(26,26,46,0.08)'
@@ -22,7 +22,6 @@ export default function SectionCard({ section, tanks = [], active, onSelect }) {
         boxShadow: active
           ? '0 4px 20px rgba(26,26,46,0.15)'
           : '0 2px 8px rgba(15,23,42,0.05)',
-        padding: '16px',
         cursor: 'pointer',
       }}
       onMouseEnter={(e) => {
@@ -38,21 +37,14 @@ export default function SectionCard({ section, tanks = [], active, onSelect }) {
         }
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-1.5 sm:gap-0 w-full">
         {/* Section letter badge */}
         <span
+          className="flex-shrink-0 flex items-center justify-center font-extrabold text-white shadow-sm rounded-md w-7 h-7 sm:w-10 sm:h-10 text-[11px] sm:text-[15px]"
           style={{
-            width: 40, height: 40,
-            borderRadius: 'var(--radius-md)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: 15,
-            color: '#fff',
             background: active
               ? 'linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%)'
               : 'linear-gradient(135deg, var(--color-primary-light) 0%, rgba(45,45,68,0.85) 100%)',
-            boxShadow: '0 2px 8px rgba(26,26,46,0.25)',
-            flexShrink: 0,
           }}
         >
           {section.name}
@@ -60,27 +52,19 @@ export default function SectionCard({ section, tanks = [], active, onSelect }) {
 
         {/* Tank count chip */}
         <span
-          style={{
-            display: 'inline-flex', alignItems: 'center',
-            padding: '3px 10px',
-            borderRadius: 999,
-            fontSize: 11, fontWeight: 700,
-            background: 'var(--color-info-bg)',
-            color: 'var(--color-info)',
-            border: '1px solid rgba(37,99,235,0.15)',
-          }}
+          className="inline-flex items-center px-1.5 py-0.5 sm:px-[10px] sm:py-[3px] rounded-full font-bold bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap text-[9px] sm:text-[11px]"
         >
-          {tanks.length} tank{tanks.length === 1 ? '' : 's'}
+          {tanks.length} <span className="hidden sm:inline">&nbsp;tank{tanks.length === 1 ? '' : 's'}</span><span className="sm:hidden pl-0.5">T</span>
         </span>
       </div>
 
       <p
+        className="mt-1.5 sm:mt-3 font-medium text-center sm:text-left text-[9px] sm:text-xs whitespace-nowrap overflow-hidden text-ellipsis w-full"
         style={{
-          marginTop: 12, fontSize: 12, fontWeight: 500,
           color: active ? 'var(--color-text-secondary)' : 'var(--color-text-muted)',
         }}
       >
-        {acres.toFixed(2)} acres total
+        {acres.toFixed(2)} <span className="hidden sm:inline">acres total</span><span className="sm:hidden">ac</span>
       </p>
     </button>
   );

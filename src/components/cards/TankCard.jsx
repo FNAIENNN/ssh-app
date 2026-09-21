@@ -9,7 +9,7 @@ export default function TankCard({ tank, active, onSelect }) {
   return (
     <button
       onClick={() => onSelect?.(tank)}
-      className="text-left w-full transition-all duration-200"
+      className="text-left w-full transition-all duration-200 p-2 sm:p-3"
       style={{
         display: 'flex', alignItems: 'center', gap: 12,
         background: active
@@ -24,7 +24,6 @@ export default function TankCard({ tank, active, onSelect }) {
         boxShadow: active
           ? '0 4px 16px rgba(26,26,46,0.12)'
           : '0 1px 6px rgba(15,23,42,0.05)',
-        padding: '12px 14px',
         cursor: 'pointer',
       }}
       onMouseEnter={(e) => {

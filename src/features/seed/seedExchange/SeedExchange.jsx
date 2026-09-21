@@ -899,8 +899,8 @@ export default function SeedExchange() {
     const tankChips = selectedBills.length > 0
       ? selectedBills.map((b) => `${formatTankDisplayName(b.from_tank_name)} → ${formatTankDisplayName(b.to_tank_name)}`)
       : (selectedWorkerTanks.length > 1
-          ? [`${formatTankDisplayName(selectedWorkerTanks[0])} → ${formatTankDisplayName(selectedWorkerTanks[1])}`]
-          : (selectedWorkerTanks.length > 0 ? selectedWorkerTanks.map((t) => formatTankDisplayName(t)) : ['Tank 1 → Tank 2']));
+        ? [`${formatTankDisplayName(selectedWorkerTanks[0])} → ${formatTankDisplayName(selectedWorkerTanks[1])}`]
+        : (selectedWorkerTanks.length > 0 ? selectedWorkerTanks.map((t) => formatTankDisplayName(t)) : ['Tank 1 → Tank 2']));
 
     const fromTankNames = selectedBills.map((b) => formatTankDisplayName(b.from_tank_name)).filter(Boolean).join(', ') ||
       (selectedWorkerTanks[0] ? formatTankDisplayName(selectedWorkerTanks[0]) : 'Tank 1');
@@ -995,7 +995,7 @@ export default function SeedExchange() {
 
   return (
     <div className="space-y-6 text-left font-sans pb-10">
-      
+
       {/* ── SUB TAB NAV: 1. Seed Exchange  |  2. Overall Report ─────────── */}
       <div className="bg-slate-900 rounded-2xl p-4 text-white shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
@@ -1009,9 +1009,8 @@ export default function SeedExchange() {
           <button
             type="button"
             onClick={() => setMainSubTab('exchange')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
-              mainSubTab === 'exchange' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${mainSubTab === 'exchange' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-300 hover:text-white'
+              }`}
           >
             <span>1. Seed Exchange</span>
           </button>
@@ -1019,9 +1018,8 @@ export default function SeedExchange() {
           <button
             type="button"
             onClick={() => setMainSubTab('reports')}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${
-              mainSubTab === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:text-white'
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-2 ${mainSubTab === 'reports' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-300 hover:text-white'
+              }`}
           >
             <span>2. Overall Report</span>
             {savedExchangesLedger.length > 0 && (
@@ -1038,17 +1036,16 @@ export default function SeedExchange() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {mainSubTab === 'exchange' && (
         <div className="space-y-6">
-          
+
           {/* Section Switcher: 1. Data Entry  |  2. Worker Payments */}
           <div className="flex items-center gap-3 bg-white rounded-2xl p-3 border border-slate-200 shadow-card print:hidden">
             <button
               type="button"
               onClick={() => setExchangeSection('dataEntry')}
-              className={`flex-1 py-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
-                exchangeSection === 'dataEntry'
+              className={`flex-1 py-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${exchangeSection === 'dataEntry'
                   ? 'bg-slate-900 text-white shadow-md'
                   : 'text-slate-600 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <span>📊</span>
               <span>1. Data Entry</span>
@@ -1056,11 +1053,10 @@ export default function SeedExchange() {
             <button
               type="button"
               onClick={() => setExchangeSection('workerPayments')}
-              className={`flex-1 py-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${
-                exchangeSection === 'workerPayments'
+              className={`flex-1 py-3 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center gap-2 ${exchangeSection === 'workerPayments'
                   ? 'bg-emerald-700 text-white shadow-md'
                   : 'text-slate-600 hover:bg-slate-100'
-              }`}
+                }`}
             >
               <span>👷</span>
               <span>2. Worker Payments</span>
@@ -1072,7 +1068,7 @@ export default function SeedExchange() {
           {/* ──────────────────────────────────────────────────────────────── */}
           {exchangeSection === 'dataEntry' && (
             <div className="space-y-6 print:hidden">
-              
+
               {/* Data Entry Stepper Navigation */}
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-card overflow-x-auto">
                 <div className="flex items-center gap-2 min-w-max">
@@ -1082,8 +1078,13 @@ export default function SeedExchange() {
                     { id: 'weightEntry', label: '3. Weight Entry (ESP32)', icon: '⚖️', enabled: isTankSelectValid && isChecklistValid },
                     { id: 'count', label: '4. Count', icon: '🔢', enabled: isTankSelectValid && isChecklistValid && isWeightEntryValid },
                   ].map((stepObj) => {
-                    const isActive = dataEntryStep === stepObj.id;
+                    const order = ['tankSelect', 'checklist', 'weightEntry', 'count'];
+                    const currentIndex = order.indexOf(dataEntryStep);
+                    const stepIndex = order.indexOf(stepObj.id);
+                    const isActive = stepIndex === currentIndex;
+                    const isCompleted = stepIndex < currentIndex;
                     const isEnabled = stepObj.enabled;
+
                     return (
                       <button
                         key={stepObj.id}
@@ -1102,15 +1103,16 @@ export default function SeedExchange() {
                             setDataEntryStep(stepObj.id);
                           }
                         }}
-                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition ${
-                          isActive
+                        className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
                             ? 'bg-slate-900 text-white shadow-sm'
-                            : isEnabled
-                            ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
-                            : 'text-slate-300 bg-slate-50 cursor-not-allowed opacity-50'
-                        }`}
+                            : isCompleted
+                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer'
+                              : isEnabled
+                                ? 'text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 cursor-pointer'
+                                : 'text-slate-400 bg-slate-50/50 cursor-not-allowed opacity-60 border border-transparent'
+                          }`}
                       >
-                        <span>{stepObj.icon}</span>
+                        <span>{isCompleted ? '✓' : stepObj.icon}</span>
                         <span>{stepObj.label}</span>
                         {!isEnabled && <span className="text-[10px]">🔒</span>}
                       </button>
@@ -1121,12 +1123,12 @@ export default function SeedExchange() {
 
               {/* ── STEP 1: TANK SELECTION ───────────────────────────────── */}
               {dataEntryStep === 'tankSelect' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6">
+                <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                       <span>🗄️</span> Tank Selection &amp; Exchange Setup
                     </h3>
-                    
+
                     {/* Date Picker with Edit Toggle */}
                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-300">
                       <span className="text-xs font-extrabold text-slate-700">Date:</span>
@@ -1254,9 +1256,8 @@ export default function SeedExchange() {
                       </select>
 
                       {toTank ? (
-                        <div className={`rounded-xl p-4 border text-xs space-y-1 ${
-                          Number(toTank.quantity || 0) > 0 ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-50 border-slate-200'
-                        }`}>
+                        <div className={`rounded-xl p-4 border text-xs space-y-1 ${Number(toTank.quantity || 0) > 0 ? 'bg-emerald-50/70 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                          }`}>
                           <p className="font-extrabold text-slate-900 text-sm">Tank {toTank.name}</p>
                           <p>Tank No: <span className="font-bold text-slate-900">{toTank.tank_no || toTank.name}</span></p>
                           <p>DOC: <span className="font-bold text-slate-900">{toTankDoc} days</span></p>
@@ -1344,11 +1345,10 @@ export default function SeedExchange() {
                       type="button"
                       disabled={!isTankSelectValid}
                       onClick={() => setDataEntryStep('checklist')}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md flex items-center gap-2 ${
-                        isTankSelectValid
+                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md flex items-center gap-2 ${isTankSelectValid
                           ? 'bg-blue-600 hover:bg-blue-500 text-white'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
+                        }`}
                     >
                       <span>Proceed to Safety Checklist →</span>
                     </button>
@@ -1358,7 +1358,7 @@ export default function SeedExchange() {
 
               {/* ── STEP 2: CHECKLIST ────────────────────────────────────── */}
               {dataEntryStep === 'checklist' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6">
+                <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                     <div>
                       <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1404,11 +1404,10 @@ export default function SeedExchange() {
                     {visibleChecklistItems.map((item) => (
                       <div
                         key={item.id}
-                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                          item.checked 
-                            ? 'bg-emerald-50/70 border-emerald-300 shadow-sm' 
+                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${item.checked
+                            ? 'bg-emerald-50/70 border-emerald-300 shadow-sm'
                             : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-slate-100/50'
-                        }`}
+                          }`}
                       >
                         <label className="flex items-center gap-3.5 cursor-pointer flex-1 mr-4 select-none">
                           <input
@@ -1475,11 +1474,10 @@ export default function SeedExchange() {
                       type="button"
                       disabled={!isChecklistValid}
                       onClick={() => setDataEntryStep('weightEntry')}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
-                        isChecklistValid
+                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${isChecklistValid
                           ? 'bg-blue-600 hover:bg-blue-500 text-white'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
+                        }`}
                     >
                       Submit to Weight Entry →
                     </button>
@@ -1493,7 +1491,7 @@ export default function SeedExchange() {
                   {/* ESP32 Auto Weighing Machine Controller */}
                   <ESP32ScaleConnector scale={scale} />
 
-                  <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6">
+                  <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
                       <div>
                         <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1502,153 +1500,152 @@ export default function SeedExchange() {
                         <p className="text-xs text-slate-500">Record total gross weight via ESP32 Scale or enter manually.</p>
                       </div>
 
-                    {/* Requirement 5: Default net weight 0, editable and allow backspacing 0 to empty */}
-                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-300">
-                      <span className="text-xs font-bold text-slate-700">Tare/Net Wt:</span>
-                      <input
-                        type="text"
-                        value={tareWeightPerNet}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                            setTareWeightPerNet(val);
-                          }
-                        }}
-                        placeholder="0"
-                        className="w-16 bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500"
-                      />
-                      <span className="text-xs text-slate-500 font-bold">KG / net</span>
+                      {/* Requirement 5: Default net weight 0, editable and allow backspacing 0 to empty */}
+                      <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-300">
+                        <span className="text-xs font-bold text-slate-700">Tare/Net Wt:</span>
+                        <input
+                          type="text"
+                          value={tareWeightPerNet}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                              setTareWeightPerNet(val);
+                            }
+                          }}
+                          placeholder="0"
+                          className="w-16 bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-xs text-slate-500 font-bold">KG / net</span>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Weightment Table */}
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900 text-white font-extrabold uppercase text-[10px]">
-                        <tr>
-                          <th className="p-3 w-14 text-center">1. S.No</th>
-                          <th className="p-3">2. Weight (kgs)</th>
-                          <th className="p-3 text-center">3. Nets</th>
-                          <th className="p-3 text-center w-24">4. Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {weighmentRows.map((row, idx) => (
-                          <tr key={row.id} className="hover:bg-slate-50">
-                            <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
-                            <td className="p-3">
-                              <input
-                                type="number"
-                                step="0.1"
-                                placeholder="e.g. 3.1"
-                                value={row.grossKg}
-                                onChange={(e) => handleUpdateWeighmentRow(row.id, 'grossKg', e.target.value)}
-                                className="w-40 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 font-mono font-black text-sm text-slate-900 focus:bg-white"
-                              />
-                              <span className="text-[10px] text-slate-400 ml-2">(e.g. 3.1 kg)</span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <div className="inline-flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-300">
-                                <button
-                                  type="button"
-                                  onClick={() => handleNetCountChange(row.id, -1)}
-                                  className="w-7 h-7 rounded-lg bg-white shadow-sm font-black text-slate-700 hover:bg-slate-200"
-                                >
-                                  -
-                                </button>
-                                <span className="w-6 text-center font-mono font-black text-sm text-slate-900">
-                                  {row.nets || 1}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleNetCountChange(row.id, 1)}
-                                  className="w-7 h-7 rounded-lg bg-white shadow-sm font-black text-slate-700 hover:bg-slate-200"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </td>
-                            <td className="p-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteWeighmentRow(row.id)}
-                                className="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold border border-rose-200"
-                              >
-                                Delete 🗑️
-                              </button>
-                            </td>
+                    {/* Weightment Table */}
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="bg-slate-900 text-white font-extrabold uppercase text-[10px]">
+                          <tr>
+                            <th className="p-3 w-14 text-center">1. S.No</th>
+                            <th className="p-3">2. Weight (kgs)</th>
+                            <th className="p-3 text-center">3. Nets</th>
+                            <th className="p-3 text-center w-24">4. Action</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Add Row Button */}
-                  <div className="flex justify-start">
-                    <button
-                      type="button"
-                      onClick={handleAddWeighmentRow}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm"
-                    >
-                      + Add New Row
-                    </button>
-                  </div>
-
-                  {/* Below Table 3 Summary Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                    <div className="rounded-2xl p-4 bg-slate-50 border border-slate-200 text-slate-900">
-                      <span className="text-[10px] font-extrabold text-slate-500 uppercase block">1. Total Weight</span>
-                      <span className="text-2xl font-black font-mono mt-1 block">
-                        {totalGrossWeight.toFixed(1)} KG
-                      </span>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {weighmentRows.map((row, idx) => (
+                            <tr key={row.id} className="hover:bg-slate-50">
+                              <td className="p-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                              <td className="p-3">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  placeholder="e.g. 3.1"
+                                  value={row.grossKg}
+                                  onChange={(e) => handleUpdateWeighmentRow(row.id, 'grossKg', e.target.value)}
+                                  className="w-40 bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 font-mono font-black text-sm text-slate-900 focus:bg-white"
+                                />
+                                <span className="text-[10px] text-slate-400 ml-2">(e.g. 3.1 kg)</span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="inline-flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-300">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleNetCountChange(row.id, -1)}
+                                    className="w-7 h-7 rounded-lg bg-white shadow-sm font-black text-slate-700 hover:bg-slate-200"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="w-6 text-center font-mono font-black text-sm text-slate-900">
+                                    {row.nets || 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleNetCountChange(row.id, 1)}
+                                    className="w-7 h-7 rounded-lg bg-white shadow-sm font-black text-slate-700 hover:bg-slate-200"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteWeighmentRow(row.id)}
+                                  className="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-bold border border-rose-200"
+                                >
+                                  Delete 🗑️
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
 
-                    <div className="rounded-2xl p-4 bg-amber-50 border border-amber-200 text-amber-900">
-                      <span className="text-[10px] font-extrabold text-amber-700 uppercase block">2. Total Net Weight (Nets × Wt)</span>
-                      <span className="text-2xl font-black font-mono mt-1 block">
-                        {totalNetTareWeight.toFixed(2)} KG
-                      </span>
-                      <span className="text-[10px] text-amber-600 block mt-0.5">{totalNetsCount} nets × {Number(tareWeightPerNet) || 0} kg</span>
+                    {/* Add Row Button */}
+                    <div className="flex justify-start">
+                      <button
+                        type="button"
+                        onClick={handleAddWeighmentRow}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-sm"
+                      >
+                        + Add New Row
+                      </button>
                     </div>
 
-                    <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-200 text-emerald-900">
-                      <span className="text-[10px] font-extrabold text-emerald-700 uppercase block">3. Grand Total (Total - Net Wt)</span>
-                      <span className="text-2xl font-black font-mono mt-1 block">
-                        {grandTotalNetWeight.toFixed(2)} KG
-                      </span>
+                    {/* Below Table 3 Summary Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                      <div className="rounded-2xl p-4 bg-slate-50 border border-slate-200 text-slate-900">
+                        <span className="text-[10px] font-extrabold text-slate-500 uppercase block">1. Total Weight</span>
+                        <span className="text-2xl font-black font-mono mt-1 block">
+                          {totalGrossWeight.toFixed(1)} KG
+                        </span>
+                      </div>
+
+                      <div className="rounded-2xl p-4 bg-amber-50 border border-amber-200 text-amber-900">
+                        <span className="text-[10px] font-extrabold text-amber-700 uppercase block">2. Total Net Weight (Nets × Wt)</span>
+                        <span className="text-2xl font-black font-mono mt-1 block">
+                          {totalNetTareWeight.toFixed(2)} KG
+                        </span>
+                        <span className="text-[10px] text-amber-600 block mt-0.5">{totalNetsCount} nets × {Number(tareWeightPerNet) || 0} kg</span>
+                      </div>
+
+                      <div className="rounded-2xl p-4 bg-emerald-50 border border-emerald-200 text-emerald-900">
+                        <span className="text-[10px] font-extrabold text-emerald-700 uppercase block">3. Grand Total (Total - Net Wt)</span>
+                        <span className="text-2xl font-black font-mono mt-1 block">
+                          {grandTotalNetWeight.toFixed(2)} KG
+                        </span>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Submit Button to Count */}
-                  <div className="flex justify-between items-center pt-4 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setDataEntryStep('checklist')}
-                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
-                    >
-                      ← Back to Checklist
-                    </button>
+                    {/* Submit Button to Count */}
+                    <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setDataEntryStep('checklist')}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+                      >
+                        ← Back to Checklist
+                      </button>
 
-                    <button
-                      type="button"
-                      disabled={!isWeightEntryValid}
-                      onClick={handleProceedToCount}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
-                        isWeightEntryValid
-                          ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      Submit to Count Section →
-                    </button>
+                      <button
+                        type="button"
+                        disabled={!isWeightEntryValid}
+                        onClick={handleProceedToCount}
+                        className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${isWeightEntryValid
+                            ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                      >
+                        Submit to Count Section →
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
               {/* ── STEP 4: COUNT ────────────────────────────────────────── */}
               {dataEntryStep === 'count' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6">
+                <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
                       <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1788,15 +1785,14 @@ export default function SeedExchange() {
           {/* ──────────────────────────────────────────────────────────────── */}
           {exchangeSection === 'workerPayments' && (
             <div className="space-y-6">
-              
+
               {/* Stepper tabs for Worker Payments */}
               <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-card flex items-center gap-2 print:hidden">
                 <button
                   type="button"
                   onClick={() => setWorkerStep('tankSelection')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-black transition ${
-                    workerStep === 'tankSelection' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-                  }`}
+                  className={`flex-1 py-2 rounded-xl text-xs font-black transition ${workerStep === 'tankSelection' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
                 >
                   1. Tank Selection
                 </button>
@@ -1810,13 +1806,12 @@ export default function SeedExchange() {
                       toast.error('Please select at least one seed exchange tank first');
                     }
                   }}
-                  className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
-                    workerStep === 'workerDetails'
+                  className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${workerStep === 'workerDetails'
                       ? 'bg-emerald-700 text-white shadow-sm'
                       : selectedWorkerBillIds.length > 0
-                      ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
-                      : 'text-slate-300 bg-slate-50 cursor-not-allowed opacity-50'
-                  }`}
+                        ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
+                        : 'text-slate-300 bg-slate-50 cursor-not-allowed opacity-50'
+                    }`}
                 >
                   <span>2. Worker Payments</span>
                   {selectedWorkerBillIds.length === 0 && <span className="text-[10px]">🔒</span>}
@@ -1831,13 +1826,12 @@ export default function SeedExchange() {
                       toast.error('Please fill supplier and worker wages first');
                     }
                   }}
-                  className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
-                    workerStep === 'overallView'
+                  className={`flex-1 py-2 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${workerStep === 'overallView'
                       ? 'bg-blue-700 text-white shadow-sm'
                       : isWorkerDetailsValid
-                      ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
-                      : 'text-slate-300 bg-slate-50 cursor-not-allowed opacity-50'
-                  }`}
+                        ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
+                        : 'text-slate-300 bg-slate-50 cursor-not-allowed opacity-50'
+                    }`}
                 >
                   <span>3. Overall View</span>
                   {!isWorkerDetailsValid && <span className="text-[10px]">🔒</span>}
@@ -1846,7 +1840,7 @@ export default function SeedExchange() {
 
               {/* ── WORKER STEP 1: TANK SELECTION ─────────────────────────── */}
               {workerStep === 'tankSelection' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 print:hidden">
+                <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6 print:hidden">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                     <div>
                       <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -1888,7 +1882,7 @@ export default function SeedExchange() {
                     </div>
 
                     {displayExchangeBills.length === 0 ? (
-                      <div className="rounded-2xl p-8 border-2 border-dashed border-slate-200 text-center space-y-3 bg-slate-50">
+                      <div className="rounded-2xl p-4 sm:p-8 border-2 border-dashed border-slate-200 text-center space-y-3 bg-slate-50">
                         <div className="text-3xl">🔄</div>
                         <h4 className="text-sm font-extrabold text-slate-800">No Submitted Tanks Found</h4>
                         <p className="text-xs text-slate-500 max-w-md mx-auto">
@@ -1922,11 +1916,10 @@ export default function SeedExchange() {
                                   prev.includes(b.id) ? prev.filter((id) => id !== b.id) : [...prev, b.id]
                                 );
                               }}
-                              className={`p-4 rounded-2xl border-2 transition cursor-pointer flex flex-col justify-between space-y-3 ${
-                                isSelected
+                              className={`p-4 rounded-2xl border-2 transition cursor-pointer flex flex-col justify-between space-y-3 ${isSelected
                                   ? 'bg-emerald-50/90 border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
                                   : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="space-y-1.5">
@@ -1951,11 +1944,10 @@ export default function SeedExchange() {
                                 </div>
 
                                 <span
-                                  className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 transition ${
-                                    isSelected
+                                  className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg shrink-0 transition ${isSelected
                                       ? 'bg-emerald-600 text-white shadow-sm'
                                       : 'bg-slate-100 text-slate-600 border border-slate-200'
-                                  }`}
+                                    }`}
                                 >
                                   {isSelected ? '✓ Selected' : 'Select Tank'}
                                 </span>
@@ -2003,11 +1995,10 @@ export default function SeedExchange() {
                       type="button"
                       disabled={selectedWorkerBillIds.length === 0}
                       onClick={() => setWorkerStep('workerDetails')}
-                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${
-                        selectedWorkerBillIds.length > 0
+                      className={`px-6 py-3 rounded-xl font-black text-xs transition shadow-md ${selectedWorkerBillIds.length > 0
                           ? 'bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer'
                           : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                      }`}
+                        }`}
                     >
                       {selectedWorkerBillIds.length > 0
                         ? `Proceed to Worker Payments (${selectedWorkerBillIds.length} Exchange Tank${selectedWorkerBillIds.length > 1 ? 's' : ''} Selected) →`
@@ -2019,8 +2010,8 @@ export default function SeedExchange() {
 
               {/* ── WORKER STEP 2: WORKER PAYMENTS & WAGES ───────────────── */}
               {workerStep === 'workerDetails' && (
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 print:hidden">
-                  
+                <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6 print:hidden">
+
                   {/* Selected Tanks Display (BEFORE SUPPLIER NAME) - Combined Seed Exchange Format */}
                   <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-4 shadow-sm space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700 pb-2.5">
@@ -2301,11 +2292,10 @@ export default function SeedExchange() {
                           type="button"
                           disabled={!isWorkerDetailsValid}
                           onClick={handlePaymentRequestSubmit}
-                          className={`w-full sm:w-auto px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 ${
-                            isWorkerDetailsValid
+                          className={`w-full sm:w-auto px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 ${isWorkerDetailsValid
                               ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
                               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
+                            }`}
                         >
                           <span>💳 Submit Payment Request to Payments Tab</span>
                         </button>
@@ -2320,11 +2310,10 @@ export default function SeedExchange() {
                               toast.error('Please select a supplier and enter worker wages first');
                             }
                           }}
-                          className={`w-full sm:w-auto px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 ${
-                            isWorkerDetailsValid
+                          className={`w-full sm:w-auto px-6 py-2.5 font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 ${isWorkerDetailsValid
                               ? 'bg-blue-700 hover:bg-blue-600 text-white cursor-pointer'
                               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
+                            }`}
                         >
                           <span>🧾 Overall View →</span>
                         </button>
@@ -2339,7 +2328,7 @@ export default function SeedExchange() {
                 <div className="space-y-6">
 
                   {/* Printable Bill Area */}
-                  <div id="printable-seed-exchange-document" className="bg-white rounded-3xl p-8 border border-slate-200 shadow-2xl space-y-6 text-slate-800">
+                  <div id="printable-seed-exchange-document" className="bg-white rounded-3xl p-4 sm:p-8 border border-slate-200 shadow-2xl space-y-4 sm:space-y-6 text-slate-800">
 
                     {/* Bill Title & Header */}
                     <div className="text-center border-b border-slate-200 pb-4 space-y-1">
@@ -2659,7 +2648,7 @@ export default function SeedExchange() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {mainSubTab === 'reports' && (
         <div className="space-y-6">
-          
+
           {/* Search Functionality Bar */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-card flex flex-col md:flex-row items-center justify-between gap-3 print:hidden">
             <div className="flex flex-wrap items-center gap-3">
@@ -2764,7 +2753,7 @@ export default function SeedExchange() {
       {viewingReportModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:static print:p-0 print:m-0 print:bg-white print:overflow-visible print:block print:w-full print:max-w-none print:h-auto">
           <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden my-auto border border-slate-200 print:shadow-none print:border-none print:w-full print:max-w-none print:overflow-visible print:block print:m-0 print:p-0 print:rounded-none print:h-auto">
-            
+
             {/* Modal Header */}
             <div className="bg-slate-900 p-4 text-white flex items-center justify-between print:hidden">
               <span className="font-extrabold text-sm">Official Seed Exchange Bill #{viewingReportModal.bill_number}</span>
@@ -2792,7 +2781,7 @@ export default function SeedExchange() {
             </div>
 
             {/* Printable Full Bill Body */}
-            <div id="printable-report-modal-document" className="p-8 space-y-6 text-slate-800 bg-white print:p-0 print:m-0 print:space-y-4">
+            <div id="printable-report-modal-document" className="p-4 sm:p-8 space-y-4 sm:space-y-6 text-slate-800 bg-white print:p-0 print:m-0 print:space-y-4">
               <div className="text-center border-b border-slate-200 pb-4 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
                   OFFICIAL SEED EXCHANGE STATEMENT

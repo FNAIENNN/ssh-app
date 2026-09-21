@@ -54,7 +54,7 @@ export function useMixedAllocationState(activeOrder, vehicles) {
 
     if (vehicles && Array.isArray(vehicles)) {
       vehicles.forEach(v => {
-        const vTanksIds = (v.tank_ids || v.selectedTanks || []).map(id => String(id));
+        const vTanksIds = (v.tank_ids || v.selectedTanks || []).map(id => String(id && typeof id === 'object' ? id.id : id));
         const originalVTanks = (activeOrder?.selected_tanks || []).filter(t => vTanksIds.includes(String(t.id)));
 
         // Discover transfer target tanks from stocking_status_data for this vehicle

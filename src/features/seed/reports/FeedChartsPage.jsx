@@ -97,14 +97,14 @@ export default function FeedChartsPage() {
 
   if (!siteId) {
     return (
-      <div className="max-w-5xl mx-auto p-6">
+      <div className="max-w-5xl mx-auto p-4 sm:p-6">
         <p className="text-sm text-text-muted">Select a site first.</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header & Back Navigation */}
       <div className="flex items-center justify-between">
         <button onClick={() => navigate('/app/seed/reports')} className="btn-ghost text-xs font-bold flex items-center gap-1">
@@ -118,7 +118,7 @@ export default function FeedChartsPage() {
         </button>
       </div>
 
-      <div className="card p-6 border space-y-5" style={{ borderColor: 'var(--color-primary)' }}>
+      <div className="card p-4 sm:p-6 border space-y-4 sm:space-y-5" style={{ borderColor: 'var(--color-primary)' }}>
         <div>
           <h2 className="text-xl font-extrabold flex items-center gap-2">
             <span>📋</span> Hatchery Feed Charts Management

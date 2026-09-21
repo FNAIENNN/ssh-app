@@ -297,6 +297,26 @@ export default function SeedVanPlanStep1({
       const clonedContainer = clonedDoc.getElementById('van-plan-export-container') || clonedDoc.querySelector('[ref="vanPlanRef"]');
       if (!clonedContainer) return;
 
+      // Force a desktop-like width and remove clipping for clean PDF export
+      clonedContainer.style.width = '900px';
+      clonedContainer.style.height = 'auto';
+      clonedContainer.style.maxHeight = 'none';
+      clonedContainer.style.overflow = 'visible';
+
+      // Find and remove all overflow restrictions inside
+      const allElements = clonedContainer.querySelectorAll('*');
+      allElements.forEach(el => {
+        const style = clonedDoc.defaultView.getComputedStyle(el);
+        if (style.overflow === 'hidden' || style.overflow === 'auto' || style.overflowX === 'auto' || style.overflowY === 'auto' || style.overflowX === 'hidden') {
+          el.style.overflow = 'visible';
+          el.style.overflowX = 'visible';
+          el.style.overflowY = 'visible';
+        }
+        if (style.maxHeight && style.maxHeight !== 'none') {
+          el.style.maxHeight = 'none';
+        }
+      });
+
       // Hide interactive action buttons in the cloned export view
       const actionButtons = clonedContainer.querySelectorAll('button');
       actionButtons.forEach((btn) => {
@@ -402,13 +422,28 @@ export default function SeedVanPlanStep1({
       });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 190;
+      const imgWidth = 190; // A4 width is 210, 10mm margins on both sides
+      const pageHeight = 297; // A4 height
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
       pdf.setFontSize(16);
       pdf.text('Seed Van Plan', 15, 15);
       pdf.setFontSize(10);
       pdf.text(`Generated: ${new Date().toLocaleDateString('en-IN')}`, 15, 22);
-      pdf.addImage(imgData, 'PNG', 10, 28, imgWidth, imgHeight);
+
+      let position = 28; // Top margin for first page
+      let heightLeft = imgHeight;
+
+      pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+      heightLeft -= (pageHeight - position);
+
+      while (heightLeft > 0) {
+        position = position - pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
       pdf.save(`Seed_Van_Plan_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
       console.error('Failed to download PDF:', err);
@@ -563,7 +598,7 @@ export default function SeedVanPlanStep1({
 
   return (
     <div
-      className="card p-6 space-y-6 max-w-4xl mx-auto shadow-md border"
+      className="card p-4 sm:p-6 space-y-6 max-w-4xl mx-auto shadow-md border"
       style={{ borderColor: 'var(--color-primary)' }}
     >
       {/* Header */}
@@ -581,7 +616,7 @@ export default function SeedVanPlanStep1({
         <button
           type="button"
           onClick={() => setShowAddNewTankModal(true)}
-          className="btn-primary text-xs font-extrabold px-3 py-2 flex items-center gap-1 shadow"
+          className="hidden sm:flex btn-primary text-xs font-extrabold px-3 py-2 items-center gap-1 shadow"
         >
           <span>+</span> Add New Tank
         </button>
@@ -877,174 +912,167 @@ export default function SeedVanPlanStep1({
         </div>
 
         {/* Dynamic Drum Table */}
-        <div className="overflow-x-auto rounded-[12px] border shadow-sm bg-white" style={{ borderColor: 'var(--color-border)' }}>
-          <table className="w-full text-left border-collapse min-w-[650px]">
-            <thead>
-              <tr className="bg-slate-900 text-white text-xs uppercase tracking-wider">
-                <th className="p-3 font-extrabold w-1/2 border-r border-slate-700 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-base">🛢️</span>
-                    <span>Left Drum Section</span>
-                  </div>
-                </th>
-                <th className="p-3 font-extrabold w-1/2 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="text-base">🛢️</span>
-                    <span>Right Drum Section</span>
-                  </div>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: Math.ceil(drums.length / 2) }).map((_, idx) => {
-                const rowNum = idx + 1;
-                const isCabinRow = idx === 0;
-                const leftDrum = drums[idx * 2];
-                const rightDrum = drums[idx * 2 + 1];
+        {/* Dynamic Drum Layout */}
+        <div className="rounded-[12px] border shadow-sm bg-white overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex bg-slate-900 text-white text-[9px] sm:text-xs uppercase tracking-wider">
+            <div className="flex-1 p-2 sm:p-3 font-extrabold border-r border-slate-700 text-center flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
+              <span className="text-sm sm:text-base leading-none">🛢️</span>
+              <span>Left Drum</span>
+            </div>
+            <div className="flex-1 p-2 sm:p-3 font-extrabold text-center flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2">
+              <span className="text-sm sm:text-base leading-none">🛢️</span>
+              <span>Right Drum</span>
+            </div>
+          </div>
+          <div className="flex flex-col bg-slate-50">
+            {Array.from({ length: Math.ceil(drums.length / 2) }).map((_, idx) => {
+              const rowNum = idx + 1;
+              const isCabinRow = idx === 0;
+              const leftDrum = drums[idx * 2];
+              const rightDrum = drums[idx * 2 + 1];
 
-                const renderDrumCell = (drum, side) => {
-                  if (!drum) {
-                    return (
-                      <div className="p-4 rounded-[12px] border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center min-h-[190px] text-center space-y-2">
-                        <span className="text-2xl opacity-40">🛢️</span>
-                        <p className="text-xs font-bold text-slate-400">
-                          Empty Slot ({isCabinRow ? 'Cabin ' : ''}{side === 'left' ? 'Left' : 'Right'} Side)
-                        </p>
+              const renderDrumCell = (drum, side) => {
+                if (!drum) {
+                  return (
+                    <div className="p-2 sm:p-4 rounded-[12px] border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center h-full min-h-[130px] sm:min-h-[190px] text-center space-y-1.5 sm:space-y-2">
+                      <span className="text-xl sm:text-2xl opacity-40 leading-none">🛢️</span>
+                      <p className="text-[9px] sm:text-xs font-bold text-slate-400 leading-tight">
+                        Empty Slot ({isCabinRow ? 'Cabin ' : ''}{side === 'left' ? 'L' : 'R'})
+                      </p>
+                      <button
+                        type="button"
+                        onClick={addDrum}
+                        className="text-[9px] sm:text-xs font-extrabold px-2 py-1.5 sm:px-3 sm:py-1.5 rounded-[6px] sm:rounded-full bg-white border border-slate-300 text-slate-700 shadow-sm hover:bg-slate-100 transition w-full max-w-[100px] sm:max-w-none break-words leading-tight"
+                      >
+                        + Add Drum
+                      </button>
+                    </div>
+                  );
+                }
+
+                const selTank = allTanks.find((t) => t.name === drum.tankName);
+                const remExcludingThis = (() => {
+                  let r = selTank ? Number(selTank.initialQty) || 0 : 0;
+                  drums.forEach((other) => {
+                    if (other.drumNum !== drum.drumNum && other.tankName === drum.tankName) {
+                      r = Math.max(0, r - (Number(other.count) || 0));
+                    }
+                  });
+                  return r;
+                })();
+
+                const err = drumErrors[drum.drumNum];
+
+                return (
+                  <div
+                    className="p-1.5 sm:p-4 rounded-[8px] sm:rounded-[12px] border space-y-2 sm:space-y-3 h-full flex flex-col transition-all shadow-xs overflow-hidden"
+                    style={{
+                      borderColor: err ? '#f87171' : isCabinRow ? '#38bdf8' : 'var(--color-border)',
+                      background: err ? '#fff5f5' : isCabinRow ? '#f0f9ff' : 'var(--color-surface)',
+                    }}
+                  >
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-1">
+                      <span
+                        className="text-[9px] sm:text-xs font-extrabold px-1.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-white shadow-xs flex items-center justify-center gap-0.5 sm:gap-1 max-w-max"
+                        style={{ background: isCabinRow ? '#0284c7' : 'var(--color-primary)' }}
+                      >
+                        {isCabinRow && <span className="leading-none">🚐</span>}
+                        <span>D{drum.drumNum}</span>
+                      </span>
+                      {drums.length > 1 && (
                         <button
                           type="button"
-                          onClick={addDrum}
-                          className="text-xs font-extrabold px-3 py-1.5 rounded-full bg-white border border-slate-300 text-slate-700 shadow-sm hover:bg-slate-100 transition"
+                          onClick={() => removeDrum(drum.drumNum)}
+                          className="text-[9px] sm:text-[11px] font-bold px-1.5 py-0.5 sm:px-2 sm:py-0.5 rounded-full transition hover:opacity-80 max-w-max"
+                          style={{ background: '#fee2e2', color: '#dc2626' }}
                         >
-                          + Add Drum Box
+                          ✕<span className="hidden sm:inline"> Remove</span>
                         </button>
-                      </div>
-                    );
-                  }
+                      )}
+                    </div>
 
-                  const selTank = allTanks.find((t) => t.name === drum.tankName);
-                  const remExcludingThis = (() => {
-                    let r = selTank ? Number(selTank.initialQty) || 0 : 0;
-                    drums.forEach((other) => {
-                      if (other.drumNum !== drum.drumNum && other.tankName === drum.tankName) {
-                        r = Math.max(0, r - (Number(other.count) || 0));
-                      }
-                    });
-                    return r;
-                  })();
-
-                  const err = drumErrors[drum.drumNum];
-
-                  return (
-                    <div
-                      className="p-4 rounded-[12px] border space-y-3 h-full flex flex-col transition-all shadow-xs"
-                      style={{
-                        borderColor: err ? '#f87171' : isCabinRow ? '#38bdf8' : 'var(--color-border)',
-                        background: err ? '#fff5f5' : isCabinRow ? '#f0f9ff' : 'var(--color-surface)',
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="text-xs font-extrabold px-3 py-1 rounded-full text-white shadow-xs flex items-center gap-1"
-                          style={{ background: isCabinRow ? '#0284c7' : 'var(--color-primary)' }}
+                    <div className="space-y-2 sm:space-y-3 flex-1 flex flex-col">
+                      <div className="w-full">
+                        <label className="field-label text-[9px] sm:text-[11px] truncate block w-full mb-0.5">Tank *</label>
+                        <select
+                          className="field py-1 px-1 sm:py-1.5 sm:px-3 text-[9px] sm:text-xs font-bold uppercase w-full min-w-0"
+                          value={drum.tankName}
+                          onChange={(e) => updateDrumTank(drum.drumNum, e.target.value)}
                         >
-                          {isCabinRow && <span>🚐</span>}
-                          <span>Drum {drum.drumNum}</span>
-                        </span>
-                        {drums.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeDrum(drum.drumNum)}
-                            className="text-[11px] font-bold px-2 py-0.5 rounded-full transition hover:opacity-80"
-                            style={{ background: '#fee2e2', color: '#dc2626' }}
+                          <option value="">— Select —</option>
+                          {allTanks.map((t) => {
+                            let remForOption = Number(t.initialQty) || 0;
+                            drums.forEach((other) => {
+                              if (other.drumNum !== drum.drumNum && other.tankName === t.name) {
+                                remForOption = Math.max(0, remForOption - (Number(other.count) || 0));
+                              }
+                            });
+                            const exhausted = remForOption === 0;
+                            return (
+                              <option
+                                key={t.id}
+                                value={t.name}
+                                disabled={exhausted && drum.tankName !== t.name}
+                              >
+                                {t.name}{exhausted ? ' (Done)' : ` (${remForOption})`}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        {drum.tankName && (
+                          <p
+                            className="text-[8px] sm:text-[10px] font-extrabold pt-0.5 sm:pt-1 truncate w-full"
+                            style={{ color: remExcludingThis === 0 ? '#dc2626' : '#059669' }}
                           >
-                            ✕ Remove
-                          </button>
+                            {remExcludingThis === 0
+                              ? '✓ All allocated'
+                              : `Rem: ${remExcludingThis.toLocaleString('en-IN')}`}
+                          </p>
                         )}
                       </div>
 
-                      <div className="space-y-3 flex-1">
-                        <div>
-                          <label className="field-label text-[11px]">Select Tank *</label>
-                          <select
-                            className="field py-1.5 text-xs font-bold uppercase"
-                            value={drum.tankName}
-                            onChange={(e) => updateDrumTank(drum.drumNum, e.target.value)}
-                          >
-                            <option value="">— Select Tank —</option>
-                            {allTanks.map((t) => {
-                              let remForOption = Number(t.initialQty) || 0;
-                              drums.forEach((other) => {
-                                if (other.drumNum !== drum.drumNum && other.tankName === t.name) {
-                                  remForOption = Math.max(0, remForOption - (Number(other.count) || 0));
-                                }
-                              });
-                              const exhausted = remForOption === 0;
-                              return (
-                                <option
-                                  key={t.id}
-                                  value={t.name}
-                                  disabled={exhausted && drum.tankName !== t.name}
-                                >
-                                  Tank {t.name}{exhausted ? ' (Done)' : ` — ${remForOption.toLocaleString('en-IN')} rem`}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          {drum.tankName && (
-                            <p
-                              className="text-[10px] font-extrabold pt-1"
-                              style={{ color: remExcludingThis === 0 ? '#dc2626' : '#059669' }}
-                            >
-                              {remExcludingThis === 0
-                                ? '✓ All seed allocated for this tank'
-                                : `Available Remaining: ${remExcludingThis.toLocaleString('en-IN')} pcs`}
-                            </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="field-label text-[11px]">Drum Seed Count *</label>
-                          <input
-                            type="number"
-                            className="field py-1.5 text-xs font-semibold"
-                            placeholder={drum.tankName ? `Max ${remExcludingThis.toLocaleString('en-IN')}` : 'Select tank first'}
-                            disabled={!drum.tankName}
-                            value={drum.count}
-                            onChange={(e) => updateDrumCount(drum.drumNum, e.target.value)}
-                            min={1}
-                            max={remExcludingThis}
-                          />
-                          {drum.count && !err && Number(drum.count) > 0 && (
-                            <p className="text-[10px] text-emerald-700 font-semibold pt-1">
-                              ✓ {Number(drum.count).toLocaleString('en-IN')} pcs
-                            </p>
-                          )}
-                        </div>
+                      <div className="w-full mt-auto">
+                        <label className="field-label text-[9px] sm:text-[11px] truncate block w-full mb-0.5">Count *</label>
+                        <input
+                          type="number"
+                          className="field py-1 px-1 sm:py-1.5 sm:px-3 text-[9px] sm:text-xs font-semibold w-full min-w-0"
+                          placeholder={drum.tankName ? `Max ${remExcludingThis}` : 'Tank req'}
+                          disabled={!drum.tankName}
+                          value={drum.count}
+                          onChange={(e) => updateDrumCount(drum.drumNum, e.target.value)}
+                          min={1}
+                          max={remExcludingThis}
+                        />
+                        {drum.count && !err && Number(drum.count) > 0 && (
+                          <p className="text-[8px] sm:text-[10px] text-emerald-700 font-semibold pt-0.5 sm:pt-1 truncate w-full">
+                            ✓ {Number(drum.count).toLocaleString('en-IN')} pcs
+                          </p>
+                        )}
                       </div>
-
-                      {err && (
-                        <div className="p-2.5 rounded-[8px] text-xs font-semibold text-red-800 bg-red-50 border border-red-300 flex items-start gap-1.5 mt-2">
-                          <span>⚠️</span>
-                          <span>{err}</span>
-                        </div>
-                      )}
                     </div>
-                  );
-                };
 
-                return (
-                  <tr key={idx} className="border-b last:border-0 hover:bg-slate-50/50 transition" style={{ borderColor: 'var(--color-border)' }}>
-                    <td className="p-3 border-r align-top w-1/2" style={{ borderColor: 'var(--color-border)' }}>
-                      {renderDrumCell(leftDrum, 'left')}
-                    </td>
-                    <td className="p-3 align-top w-1/2">
-                      {renderDrumCell(rightDrum, 'right')}
-                    </td>
-                  </tr>
+                    {err && (
+                      <div className="p-1 sm:p-2.5 rounded-[6px] sm:rounded-[8px] text-[8px] sm:text-xs font-semibold text-red-800 bg-red-50 border border-red-300 flex items-start gap-1 mt-1 sm:mt-2 w-full break-words leading-tight">
+                        <span>⚠️</span>
+                        <span className="truncate whitespace-normal">{err}</span>
+                      </div>
+                    )}
+                  </div>
                 );
-              })}
-            </tbody>
-          </table>
+              };
+
+              return (
+                <div key={idx} className="flex flex-row border-b last:border-b-0 hover:bg-slate-50/50 transition w-full" style={{ borderColor: 'var(--color-border)' }}>
+                  <div className="p-1.5 sm:p-3 border-r w-1/2 min-w-0" style={{ borderColor: 'var(--color-border)' }}>
+                    {renderDrumCell(leftDrum, 'left')}
+                  </div>
+                  <div className="p-1.5 sm:p-3 w-1/2 min-w-0">
+                    {renderDrumCell(rightDrum, 'right')}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Add Drum button */}
@@ -1060,50 +1088,52 @@ export default function SeedVanPlanStep1({
 
         {/* Grand Total */}
         <div
-          className="p-5 rounded-[16px] flex items-center justify-between shadow-md mt-4"
+          className="p-3 sm:p-5 rounded-[12px] sm:rounded-[16px] flex items-center justify-between shadow-sm sm:shadow-md mt-4"
           style={{ background: 'linear-gradient(135deg, var(--color-success) 0%, #16a34a 100%)' }}
         >
           <div>
-            <p className="text-xs uppercase tracking-wider font-semibold text-white/80">
-              Grand Total Seed Count
+            <p className="text-[10px] sm:text-xs uppercase tracking-wider font-semibold text-white/90">
+              Total Allocated
             </p>
-            <p className="text-3xl font-black text-white">{grandTotal.toLocaleString('en-IN')}</p>
-            <p className="text-xs text-white/70 mt-0.5">
-              {completedCount} drum{completedCount !== 1 ? 's' : ''} allocated
+            <p className="text-xl sm:text-3xl font-black text-white">
+              {grandTotal.toLocaleString('en-IN')} <span className="text-[10px] sm:text-sm font-bold text-white/80">pcs</span>
             </p>
           </div>
-          <div className="text-white text-3xl">🧮</div>
+          <div className="text-right">
+            <div className="text-lg sm:text-3xl mb-0.5 sm:mb-1">🧮</div>
+            <p className="text-[9px] sm:text-xs font-bold text-white/90">
+              {completedCount} drum{completedCount !== 1 ? 's' : ''}
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Export section */}
-      <div className="p-4 rounded-[12px] border bg-slate-50 space-y-3" style={{ borderColor: 'var(--color-border)' }}>
-        <div className="flex items-center justify-between">
+      <div className="p-3 sm:p-4 rounded-[10px] sm:rounded-[12px] border bg-slate-50 flex flex-row items-center justify-between" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <span className="text-lg sm:text-xl">📥</span>
           <div>
-            <h4 className="font-extrabold text-sm text-primary flex items-center gap-1.5">
-              <span>📥</span> Download Seed Van Plan
-            </h4>
-            <p className="text-xs text-text-muted">Export the complete drum allocation plan.</p>
+            <h4 className="font-bold text-[11px] sm:text-sm text-primary leading-tight">Download Plan</h4>
+            <p className="hidden sm:block text-[10px] sm:text-xs text-text-muted mt-0.5">Export the complete drum allocation plan.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleDownloadPDF}
-              disabled={exporting}
-              className="btn-primary text-xs font-bold px-3.5 py-2 shadow flex items-center gap-1"
-            >
-              <span>📄</span> PDF
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadImage}
-              disabled={exporting}
-              className="btn-ghost text-xs font-bold px-3.5 py-2 border rounded-[8px] bg-white flex items-center gap-1 relative z-10 pointer-events-auto cursor-pointer"
-              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-            >
-              <span>🖼️</span> Image (PNG)
-            </button>
-          </div>
+        </div>
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            type="button"
+            onClick={handleDownloadPDF}
+            disabled={exporting}
+            className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-[10px] sm:text-xs font-bold px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-[6px] sm:rounded-[8px] shadow-sm flex items-center gap-1 transition-colors"
+          >
+            <span>📄</span> PDF
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadImage}
+            disabled={exporting}
+            className="hidden sm:flex bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 text-xs font-bold px-3.5 py-2 rounded-[8px] shadow-sm items-center gap-1 relative z-10 cursor-pointer transition-colors"
+          >
+            <span>🖼️</span> Image
+          </button>
         </div>
       </div>
 
@@ -1115,12 +1145,12 @@ export default function SeedVanPlanStep1({
       )}
 
       {/* Navigation */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
+      <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-3">
         <button
           type="button"
           onClick={handleNext}
           disabled={!isValid}
-          className="btn-success w-full sm:flex-1 text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white w-full sm:flex-1 text-sm sm:text-base py-2.5 sm:py-3.5 rounded-[8px] sm:rounded-[10px] font-bold shadow-sm sm:shadow-lg flex items-center justify-center gap-1.5 sm:gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           <span>Save Seed Van Plan</span>
           <span>💾</span>
@@ -1130,7 +1160,7 @@ export default function SeedVanPlanStep1({
           <button
             type="button"
             onClick={onContinue}
-            className="btn-primary w-full sm:flex-1 text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2"
+            className="bg-slate-900 hover:bg-slate-800 text-white w-full sm:flex-1 text-sm sm:text-base py-2.5 sm:py-3.5 rounded-[8px] sm:rounded-[10px] font-bold shadow-sm sm:shadow-lg flex items-center justify-center gap-1.5 sm:gap-2 transition-colors"
           >
             <span>Continue to Stocking Status</span>
             <span>➔</span>
