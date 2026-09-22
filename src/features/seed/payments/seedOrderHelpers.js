@@ -2,7 +2,7 @@ export function isOrderFullyCompleted(order) {
   if (!order) return false;
 
   // Core explicit final flag check
-  if (order.status === 'Completed' || order.stocking_status === 'completed') {
+  if (order.status?.toLowerCase() === 'completed' || order.stocking_status?.toLowerCase() === 'completed') {
     return true;
   }
 
@@ -18,11 +18,11 @@ export function isOrderFullyCompleted(order) {
   if (isMixed) {
     return hasPacking && hasVanPlan && hasStocking && hasSupervisor && hasOutsideWorkers;
   }
-  
+
   if (hasPacking) {
     return hasOutsideWorkers;
   }
-  
+
   if (hasVanPlan) {
     return hasStocking && hasSupervisor && hasOutsideWorkers;
   }
@@ -43,17 +43,17 @@ export function getResumeStep(order) {
   if (stage === 'mixed-allocation') {
     const isPackingDone = !!order.packing_data?.packingCompleted;
     const isVanPlanDone = !!order.stocking_status_data?.seedVanCompleted;
-    
+
     if (!isPackingDone && !isVanPlanDone) return 'mixed-allocation'; // neither finished yet
     if (!isPackingDone) return 'packing';
     if (!isVanPlanDone) {
       if (!order.van_plan) return 'van-plan';
       if (!order.stocking_status_data?.seedVanCompleted) return 'stocking-status';
     }
-    
+
     // Both done, check outside workers
     if (!order.outside_workers_data) return 'outside-workers';
-    
+
     return 'mixed-allocation'; // fallback
   }
 
@@ -62,7 +62,7 @@ export function getResumeStep(order) {
   const hasVanPlan = !!order.van_plan;
 
   if (!hasPacking && !hasVanPlan && ['pay', 'vehicle', 'vehicle-payments', 'pending'].includes(stage)) {
-    return stage; 
+    return stage;
   }
 
   // 3. Derive from persisted data for specific paths
