@@ -137,13 +137,6 @@ export default function WeightEntryTable({
                 <span className="text-[10px] text-amber-600 font-bold block">{netWtPerNet} kg/net</span>
               )}
             </div>
-            <button
-              type="button"
-              onClick={addRow}
-              className="btn-secondary text-xs font-bold flex items-center gap-1"
-            >
-              ➕ Add Row
-            </button>
           </div>
         </div>
 
@@ -229,6 +222,17 @@ export default function WeightEntryTable({
           </table>
         </div>
 
+        {/* Add Row Button — BELOW table */}
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={addRow}
+            className="btn-secondary text-xs font-bold flex items-center gap-1"
+          >
+            ➕ Add Row
+          </button>
+        </div>
+
         {/* 3 Summary Cards */}
         <div className="grid grid-cols-3 gap-3 pt-2">
           <div className="rounded-xl p-3 bg-blue-50 border border-blue-200">
@@ -272,9 +276,8 @@ export default function WeightEntryTable({
           type="button"
           disabled={grandTotal <= 0}
           onClick={onProceed}
-          className={`px-4 py-2 rounded-xl text-white text-xs font-extrabold transition shadow-sm ${
-            grandTotal > 0 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-300 cursor-not-allowed'
-          }`}
+          className={`px-4 py-2 rounded-xl text-white text-xs font-extrabold transition shadow-sm ${grandTotal > 0 ? 'bg-blue-600 hover:bg-blue-500' : 'bg-slate-300 cursor-not-allowed'
+            }`}
         >
           Proceed to Count Entry ({grandTotal.toFixed(1)} KG) →
         </button>

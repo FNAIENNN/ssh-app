@@ -43,22 +43,8 @@ export default function LabourDetailsForm({
         count: st.finalCount,
       }));
     }
-    if (tanks && tanks.length > 0) {
-      return tanks.map((t) => ({
-        id: t.id,
-        tank_id: t.id,
-        name: t.name || `Tank ${t.id}`,
-      }));
-    }
-    // Fallback demo tanks if empty
-    return [
-      { id: 't1', tank_id: 't1', name: 'A1' },
-      { id: 't2', tank_id: 't2', name: 'A2' },
-      { id: 't3', tank_id: 't3', name: 'A3' },
-      { id: 't4', tank_id: 't4', name: 'A4' },
-      { id: 't5', tank_id: 't5', name: 'A5' },
-    ];
-  }, [savedTanks, tanks]);
+    return [];
+  }, [savedTanks]);
 
   // 2. Saved Labour Groups State (loaded from persistence)
   const [labourGroups, setLabourGroups] = useState(() => {
@@ -78,8 +64,19 @@ export default function LabourDetailsForm({
   });
 
   // 3. Selection & Form Active State
-  const [selectedTankIds, setSelectedTankIds] = useState([]);
+  const [selectedTankIds, setSelectedTankIds] = useState(() => {
+    if (harvestedTanks && harvestedTanks.length > 0) {
+      return harvestedTanks.map((t) => t.id);
+    }
+    return [];
+  });
   const [editingGroupId, setEditingGroupId] = useState(null);
+
+  useEffect(() => {
+    if (selectedTankIds.length === 0 && harvestedTanks.length > 0 && !editingGroupId) {
+      setSelectedTankIds(harvestedTanks.map((t) => t.id));
+    }
+  }, [harvestedTanks]);
 
   // Form State
   const [suppliersList, setSuppliersList] = useState([]);
@@ -448,13 +445,12 @@ export default function LabourDetailsForm({
                 key={t.id}
                 type="button"
                 onClick={() => handleToggleTank(t.id)}
-                className={`relative px-4 py-2.5 rounded-xl border-2 font-black text-sm transition flex items-center gap-2 cursor-pointer ${
-                  isSelected
+                className={`relative px-4 py-2.5 rounded-xl border-2 font-black text-sm transition flex items-center gap-2 cursor-pointer ${isSelected
                     ? 'bg-blue-600 border-blue-600 text-white shadow-md scale-[1.02]'
                     : isAssigned
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:border-emerald-500'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-white'
-                }`}
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:border-emerald-500'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:border-blue-400 hover:bg-white'
+                  }`}
               >
                 <span>{t.name}</span>
                 {isSelected && <span className="text-xs">✓</span>}
@@ -507,11 +503,10 @@ export default function LabourDetailsForm({
             {labourGroups.map((group, idx) => (
               <div
                 key={group.id}
-                className={`rounded-2xl p-5 border-2 transition space-y-4 ${
-                  editingGroupId === group.id
+                className={`rounded-2xl p-5 border-2 transition space-y-4 ${editingGroupId === group.id
                     ? 'bg-amber-50/70 border-amber-400 shadow-md'
                     : 'bg-white border-slate-200 shadow-card hover:border-slate-300'
-                }`}
+                  }`}
               >
                 {/* Group Card Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
@@ -632,6 +627,38 @@ export default function LabourDetailsForm({
         <div className="space-y-4">
           <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">1. Labour Supplier</h4>
 
+          {/* Selected Tanks Display before Supplier Name */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold text-slate-700 flex items-center gap-1.5">
+                <span>🗄️</span>
+                <span>Selected Tanks for Labour</span>
+              </span>
+              <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                {selectedTankIds.length} of {harvestedTanks.length} Selected
+              </span>
+            </div>
+            {selectedTankIds.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {harvestedTanks
+                  .filter((t) => selectedTankIds.includes(t.id))
+                  .map((t) => (
+                    <span
+                      key={t.id}
+                      className="px-3 py-1 bg-white border-2 border-blue-600 text-blue-900 font-extrabold text-xs rounded-xl shadow-sm flex items-center gap-1.5"
+                    >
+                      <span>🗄️</span>
+                      <span>{t.name?.startsWith('Tank') ? t.name : `Tank ${t.name}`}</span>
+                    </span>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-600 italic">
+                Please select tanks in Section 1 above to assign Outside Workers.
+              </p>
+            )}
+          </div>
+
           {/* Supplier Name Dropdown */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-700 block">Supplier Name</label>
@@ -722,13 +749,6 @@ export default function LabourDetailsForm({
         <div className="space-y-4 border-t border-slate-100 pt-5">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">2. Worker Categories & Wages</h4>
-            <button
-              type="button"
-              onClick={addWorkerRow}
-              className="btn-secondary text-xs font-bold flex items-center gap-1"
-            >
-              ➕ Add Row
-            </button>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -810,6 +830,17 @@ export default function LabourDetailsForm({
             </table>
           </div>
 
+          {/* Add Row Button — BELOW table */}
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={addWorkerRow}
+              className="btn-secondary text-xs font-bold flex items-center gap-1"
+            >
+              ➕ Add Row
+            </button>
+          </div>
+
           {/* Remarks & Mestri Signature */}
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5 pb-4 border-b border-slate-100">
@@ -840,11 +871,10 @@ export default function LabourDetailsForm({
             type="button"
             disabled={selectedTankIds.length === 0}
             onClick={handleSaveGroup}
-            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition shadow-sm flex items-center justify-center gap-2 ${
-              selectedTankIds.length > 0
+            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition shadow-sm flex items-center justify-center gap-2 ${selectedTankIds.length > 0
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
+              }`}
           >
             <span>{editingGroupId ? '✓ Update Labour Details for Group' : '💾 Submit & Save Labour Details for Selected Tanks'}</span>
             {selectedTankIds.length > 0 && (

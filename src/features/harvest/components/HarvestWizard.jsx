@@ -176,20 +176,75 @@ export default function HarvestWizard({ siteId, harvestType = 'middle', onFinish
     const billNum = generateBillNumber();
 
     try {
+      const savedTankObj = {
+        tank_id: selectedTankId,
+        tank_name: selectedTank?.name || 'A1',
+        finalCount: finalCount,
+        grandTotalKgs: grandTotalKgs,
+        pricePerKg: Number(pricePerKg),
+        weightRows: weightRows,
+      };
+
+      const docDataObj = {
+        bill_number: billNum,
+        date: new Date().toISOString().slice(0, 10),
+        site_id: siteId,
+        site_name: billingData.farm_name || 'Farm Name',
+        buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
+        factory_name: graderData.factory_name || '',
+        grader_name: graderData.name || billingData.grader_name || '',
+        supervisor_name: billingData.harvest_supervisor || '',
+        tank_name: selectedTank?.name ? `Tank ${selectedTank.name}` : 'Tank A1',
+        harvest_type: harvestType,
+        total_kgs: grandTotalKgs,
+        price_per_kg: Number(pricePerKg),
+        total_amount: totalHarvestAmount,
+        paid_amount: 0,
+        balance_amount: totalHarvestAmount,
+        savedTanks: [savedTankObj],
+        tanks: [savedTankObj],
+        weightRows: weightRows,
+        supervisor_signature: billingData.supervisor_signature || null,
+        grader_signature: graderData.grader_signature || null,
+        grader_rows: graderData.grader_rows || null,
+        worker_rows: workerRows,
+        grader_details: graderData,
+        labour_details: labourData,
+        billing_details: billingData,
+        harvest_details: {
+          savedTanks: [savedTankObj],
+          tanks: [savedTankObj],
+          billingData,
+          graderData,
+          labourData,
+          weightRows,
+        },
+      };
+
       // 1. Insert Bill row into `bills` table
       const billPayload = {
         site_id: siteId,
         bill_number: billNum,
         type: 'harvest',
         harvest_type: harvestType,
+        report_type: harvestType === 'full' ? 'full_bill' : 'middle_bill',
         tank_id: selectedTankId,
         total_amount: totalHarvestAmount,
         paid_amount: 0,
         balance_amount: totalHarvestAmount,
         status: 'pending',
-        buyer_name: graderData.buyer_name,
-        factory_name: graderData.factory_name,
+        buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
+        factory_name: graderData.factory_name || '',
         created_by: user?.id,
+        document_data: docDataObj,
+        harvest_details: {
+          savedTanks: [savedTankObj],
+          tanks: [savedTankObj],
+          billingData,
+          graderData,
+          labourData,
+          weightRows,
+        },
       };
 
       const { data: billRows, error: billErr } = await supabase
@@ -304,22 +359,20 @@ export default function HarvestWizard({ siteId, harvestType = 'middle', onFinish
                 type="button"
                 onClick={() => completed && setStep(stNum)}
                 disabled={!completed && !active}
-                className={`flex items-center gap-2 text-xs font-bold transition px-3 py-1.5 rounded-xl ${
-                  active
+                className={`flex items-center gap-2 text-xs font-bold transition px-3 py-1.5 rounded-xl ${active
                     ? 'bg-slate-900 text-white shadow-md'
                     : completed
-                    ? 'text-emerald-700 hover:bg-emerald-50 cursor-pointer'
-                    : 'text-slate-400 opacity-60 cursor-not-allowed'
-                }`}
+                      ? 'text-emerald-700 hover:bg-emerald-50 cursor-pointer'
+                      : 'text-slate-400 opacity-60 cursor-not-allowed'
+                  }`}
               >
                 <span
-                  className={`w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-mono ${
-                    active
+                  className={`w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-mono ${active
                       ? 'bg-blue-500 text-white'
                       : completed
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-200 text-slate-500'
-                  }`}
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-500'
+                    }`}
                 >
                   {completed ? '✓' : stNum}
                 </span>
@@ -353,20 +406,18 @@ export default function HarvestWizard({ siteId, harvestType = 'middle', onFinish
                   <div
                     key={tk.id}
                     onClick={() => setSelectedTankId(tk.id)}
-                    className={`rounded-2xl p-4 border-2 transition cursor-pointer flex flex-col justify-between ${
-                      isSelected
+                    className={`rounded-2xl p-4 border-2 transition cursor-pointer flex flex-col justify-between ${isSelected
                         ? 'bg-blue-50/70 border-blue-600 shadow-md'
                         : 'bg-slate-50/50 border-slate-200 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-lg font-black text-slate-900">Tank {tk.name}</span>
                       <span
-                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase ${
-                          isRunning
+                        className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase ${isRunning
                             ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                             : 'bg-slate-200 text-slate-600'
-                        }`}
+                          }`}
                       >
                         {isRunning ? 'Running' : 'Empty'}
                       </span>

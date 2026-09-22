@@ -212,11 +212,10 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
         <button
           type="button"
           onClick={() => setMainSection('data-entry')}
-          className={`flex-1 py-3 rounded-xl text-sm font-extrabold transition flex items-center justify-center gap-2 ${
-            mainSection === 'data-entry'
+          className={`flex-1 py-3 rounded-xl text-sm font-extrabold transition flex items-center justify-center gap-2 ${mainSection === 'data-entry'
               ? 'bg-slate-900 text-white shadow-md'
               : 'text-slate-600 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <span>📊</span>
           <span>Data Entry</span>
@@ -229,11 +228,10 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
         <button
           type="button"
           onClick={() => setMainSection('billing')}
-          className={`flex-1 py-3 rounded-xl text-sm font-extrabold transition flex items-center justify-center gap-2 ${
-            mainSection === 'billing'
+          className={`flex-1 py-3 rounded-xl text-sm font-extrabold transition flex items-center justify-center gap-2 ${mainSection === 'billing'
               ? 'bg-blue-600 text-white shadow-md'
               : 'text-slate-600 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <span>💳</span>
           <span>Billing Details</span>
@@ -257,13 +255,12 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                     type="button"
                     disabled={!isAccessible}
                     onClick={() => isAccessible && setDataEntryTab(tab.id)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                      isActive
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
                         ? 'bg-slate-900 text-white shadow-sm'
                         : isAccessible
-                        ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
-                        : 'text-slate-400 opacity-50 cursor-not-allowed'
-                    }`}
+                          ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
+                          : 'text-slate-400 opacity-50 cursor-not-allowed'
+                      }`}
                   >
                     <span>{tab.icon}</span>
                     <span>{idx + 1}. {tab.label}</span>
@@ -315,13 +312,12 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                       <div
                         key={tk.id}
                         onClick={() => setSelectedTankId(tk.id)}
-                        className={`rounded-2xl p-4 border-2 transition cursor-pointer ${
-                          isSelected
+                        className={`rounded-2xl p-4 border-2 transition cursor-pointer ${isSelected
                             ? 'bg-blue-50/70 border-blue-600 shadow-md'
                             : alreadySaved
-                            ? 'bg-emerald-50/50 border-emerald-400'
-                            : 'bg-slate-50/50 border-slate-200 hover:border-slate-300'
-                        }`}
+                              ? 'bg-emerald-50/50 border-emerald-400'
+                              : 'bg-slate-50/50 border-slate-200 hover:border-slate-300'
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-lg font-black text-slate-900">Tank {tk.name}</span>
@@ -329,9 +325,8 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                             {alreadySaved && (
                               <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 uppercase">✓ Saved</span>
                             )}
-                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase ${
-                              isRunning ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-600'
-                            }`}>
+                            <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase ${isRunning ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-600'
+                              }`}>
                               {isRunning ? 'Running' : 'Empty'}
                             </span>
                           </div>
@@ -456,13 +451,12 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                     type="button"
                     disabled={!accessible}
                     onClick={() => accessible && setBillingTab(tab.id)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                      isActive
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
                         ? 'bg-blue-600 text-white shadow-sm'
                         : accessible
-                        ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
-                        : 'text-slate-400 opacity-50 cursor-not-allowed'
-                    }`}
+                          ? 'text-slate-600 hover:bg-slate-100 cursor-pointer'
+                          : 'text-slate-400 opacity-50 cursor-not-allowed'
+                      }`}
                   >
                     <span>{tab.icon}</span>
                     <span>{idx + 1}. {tab.label}</span>
@@ -504,17 +498,15 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                       <div
                         key={st.id}
                         onClick={() => handleToggleBillingTank(st.id)}
-                        className={`rounded-2xl p-4 border-2 cursor-pointer transition ${
-                          isSelected
+                        className={`rounded-2xl p-4 border-2 cursor-pointer transition ${isSelected
                             ? 'bg-blue-50 border-blue-600 shadow-md'
                             : 'bg-slate-50 border-slate-200 hover:border-blue-400'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-lg font-black text-slate-900">Tank {st.tank_name}</span>
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${
-                            isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-400'
-                          }`}>
+                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-slate-400'
+                            }`}>
                             {isSelected && <span className="text-white text-[10px] font-black">✓</span>}
                           </div>
                         </div>
@@ -590,17 +582,61 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
               onGenerateBill={async (payload = {}) => {
                 setIsSubmitting(true);
                 try {
-                  const billNum = `MHV${new Date().toISOString().slice(0,10).replace(/-/g,'')}${Math.floor(1000+Math.random()*9000)}`;
+                  const billNum = `MHV${new Date().toISOString().slice(0, 10).replace(/-/g, '')}${Math.floor(1000 + Math.random() * 9000)}`;
                   const totalAmt = selectedBillingTanks.reduce((sum, t) => sum + t.grandTotalKgs * Number(t.pricePerKg), 0);
                   const totalKgs = selectedBillingTanks.reduce((sum, t) => sum + t.grandTotalKgs, 0);
                   const tankNames = selectedBillingTanks.map((t) => `Tank ${t.tank_name}`).join(', ');
                   const todayDate = new Date().toISOString().slice(0, 10);
-                  
+
+                  const docDataObj = {
+                    bill_number: billNum,
+                    date: todayDate,
+                    site_id: siteId,
+                    site_name: billingData.farm_name || 'Farm Name',
+                    buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
+                    factory_name: graderData.factory_name || '',
+                    grader_name: graderData.name || billingData.grader_name || '',
+                    supervisor_name: billingData.harvest_supervisor || '',
+                    tank_name: tankNames,
+                    harvest_type: 'middle',
+                    total_kgs: totalKgs,
+                    price_per_kg: selectedBillingTanks[0]?.pricePerKg || 0,
+                    total_amount: Math.round(totalAmt),
+                    paid_amount: 0,
+                    balance_amount: Math.round(totalAmt),
+                    savedTanks: selectedBillingTanks,
+                    tanks: selectedBillingTanks,
+                    weightRows: selectedBillingTanks.flatMap((t) => t.weightRows || []),
+                    bill_photo: payload.billPhotoPreview || null,
+                    spotPhotos: payload.spotPhotos || [],
+                    uasf_bill_no: payload.uasfBillNo || '',
+                    buying_rates: payload.buyingRates || {},
+                    supervisor_signature: billingData.supervisor_signature || null,
+                    grader_signature: graderData.grader_signature || null,
+                    grader_rows: graderData.grader_rows || null,
+                    worker_rows: labourData.worker_rows || null,
+                    grader_details: graderData,
+                    labour_details: labourData,
+                    billing_details: billingData,
+                    harvest_details: {
+                      savedTanks: selectedBillingTanks,
+                      tanks: selectedBillingTanks,
+                      billingData,
+                      graderData,
+                      labourData,
+                      billPhoto: payload.billPhotoPreview || null,
+                      spotPhotos: payload.spotPhotos || [],
+                      uasfBillNo: payload.uasfBillNo || '',
+                      buyingRates: payload.buyingRates || {},
+                    },
+                  };
+
                   const billRecord = {
                     site_id: siteId,
                     bill_number: billNum,
                     type: 'harvest',
                     harvest_type: 'middle',
+                    report_type: 'middle_bill',
                     date: todayDate,
                     tank_name: tankNames,
                     kgs: parseFloat(totalKgs.toFixed(3)),
@@ -614,8 +650,10 @@ export default function MiddleHarvestModule({ siteId, onFinished }) {
                     spot_photos: payload.spotPhotos || [],
                     uasf_bill_no: payload.uasfBillNo || '',
                     buying_rates: payload.buyingRates || {},
+                    document_data: docDataObj,
                     harvest_details: {
                       savedTanks: selectedBillingTanks,
+                      tanks: selectedBillingTanks,
                       billingData,
                       graderData,
                       labourData,

@@ -179,20 +179,80 @@ export default function OfficialBillDocument({ documentData, docType = 'bill', b
     shouldShowValamanushuluTable = false;
   }
 
-  const rawTanks = Array.isArray(savedTanks) && savedTanks.length > 0
-    ? savedTanks
-    : safeDocumentData.tanks || safeDocumentData.harvest_details?.tanks || [
+  const normalizeTanksList = (docData) => {
+    if (!docData || typeof docData !== 'object') {
+      return [
         { tank_name: 'A1', finalCount: 60.00, grandTotalKgs: 52.400, pricePerKg: 56 },
         { tank_name: 'A2', finalCount: 60.00, grandTotalKgs: 52.400, pricePerKg: 45 },
       ];
+    }
 
-  const tanksList = rawTanks.map((t, idx) => ({
-    tank_name: t.tank_name || t.name || (idx === 0 ? 'A1' : 'A2'),
-    finalCount: Number(t.finalCount || t.count || 60.00),
-    grandTotalKgs: Number(t.grandTotalKgs || t.kgs || t.weight || (idx === 0 ? 52.400 : 52.400)),
-    pricePerKg: Number(t.pricePerKg || t.rate || (idx === 0 ? 56 : 45)),
-    tank: t.tank || t,
-  }));
+    let candidates =
+      docData.savedTanks ||
+      docData.tanks ||
+      docData.harvest_details?.savedTanks ||
+      docData.harvest_details?.tanks ||
+      docData.selectedBillingTanks ||
+      docData.billingTanks ||
+      null;
+
+    if (typeof candidates === 'string') {
+      try {
+        const parsed = JSON.parse(candidates);
+        if (parsed) candidates = parsed;
+      } catch (e) {
+        // String was not JSON
+      }
+    }
+
+    let tanksArray = [];
+    if (Array.isArray(candidates) && candidates.length > 0) {
+      tanksArray = candidates;
+    } else if (candidates && typeof candidates === 'object') {
+      tanksArray = Object.values(candidates);
+    } else if (typeof candidates === 'string' && candidates.trim().length > 0) {
+      tanksArray = candidates.split(',').map((s) => ({ tank_name: s.trim().replace(/^Tank\s+/i, '') }));
+    }
+
+    if (tanksArray.length === 0) {
+      const singleName = docData.tank_name || docData.tank || docData.harvest_details?.tank_name || docData.harvest_details?.tank;
+      if (singleName && typeof singleName === 'string') {
+        tanksArray = singleName.split(',').map((s) => ({ tank_name: s.trim().replace(/^Tank\s+/i, '') }));
+      } else if (singleName && typeof singleName === 'object') {
+        tanksArray = [singleName];
+      }
+    }
+
+    if (!Array.isArray(tanksArray) || tanksArray.length === 0) {
+      tanksArray = [
+        { tank_name: 'A1', finalCount: 60.00, grandTotalKgs: 52.400, pricePerKg: 56 },
+        { tank_name: 'A2', finalCount: 60.00, grandTotalKgs: 52.400, pricePerKg: 45 },
+      ];
+    }
+
+    return tanksArray.map((t, idx) => {
+      const tankObj = (t && typeof t === 'object') ? t : { tank_name: String(t || (idx === 0 ? 'A1' : 'A2')) };
+      const rawName = tankObj.tank_name || tankObj.name || tankObj.tank_id || (idx === 0 ? 'A1' : 'A2');
+      const cleanName = String(rawName).replace(/^Tank\s+/i, '');
+
+      const tWeightRows = Array.isArray(tankObj.weightRows) && tankObj.weightRows.length > 0
+        ? tankObj.weightRows
+        : (Array.isArray(docData.weightRows) ? docData.weightRows : []);
+
+      return {
+        ...tankObj,
+        tank_name: cleanName,
+        finalCount: Number(tankObj.finalCount || tankObj.count || docData.finalCount || docData.price_per_kg || 60.00),
+        grandTotalKgs: Number(tankObj.grandTotalKgs || tankObj.kgs || tankObj.weight || docData.total_kgs || (idx === 0 ? 52.400 : 52.400)),
+        pricePerKg: Number(tankObj.pricePerKg || tankObj.rate || docData.price_per_kg || (idx === 0 ? 56 : 45)),
+        weightRows: tWeightRows,
+        tank: tankObj.tank || tankObj,
+      };
+    });
+  };
+
+  const tanksList = normalizeTanksList(safeDocumentData);
+  const rawTanks = tanksList;
 
   const totalHarvestKgs = tanksList.reduce((acc, item) => acc + (Number(item.grandTotalKgs) || 0), 0) || total_kgs || 104.800;
   const calculatedBillTotal = tanksList.reduce((acc, item) => acc + (Number(item.grandTotalKgs) || 0) * (Number(item.pricePerKg) || 0), 0);
@@ -358,37 +418,70 @@ export default function OfficialBillDocument({ documentData, docType = 'bill', b
               </span>
             </div>
 
-            {tanksList.map((t, idx) => (
-              <div key={idx} className="rounded-xl border border-slate-200 overflow-hidden space-y-0">
-                <div className="bg-slate-100 p-2.5 border-b border-slate-200 font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
-                  <span>📦</span> <span>Tank {t.tank_name} Weighment Table (1 weighments)</span>
+            {tanksList.map((t, idx) => {
+              const rawRows =
+                (t.weightRows && Array.isArray(t.weightRows) && t.weightRows.length > 0 ? t.weightRows : null) ||
+                (t.weight_rows && Array.isArray(t.weight_rows) && t.weight_rows.length > 0 ? t.weight_rows : null) ||
+                (t.tank?.weightRows && Array.isArray(t.tank.weightRows) && t.tank.weightRows.length > 0 ? t.tank.weightRows : null) ||
+                (Array.isArray(safeDocumentData.weightRows) && safeDocumentData.weightRows.length > 0 ? safeDocumentData.weightRows : null) ||
+                (Array.isArray(safeDocumentData.weighments) && safeDocumentData.weighments.length > 0 ? safeDocumentData.weighments : null) ||
+                [];
+
+              const netWtPerNet = Number(t.netWeightPerNet || safeDocumentData.netWeightPerNet || 0);
+
+              const rowsToDisplay = rawRows.length > 0
+                ? rawRows
+                : [{ id: 1, kgs: t.grandTotalKgs || 52.4, nets: 2 }];
+
+              const computedTankTotal = rawRows.length > 0
+                ? rawRows.reduce((sum, r) => {
+                    const gross = Number(r.kgs || r.weight || 0);
+                    const nets = Number(r.nets ?? 2);
+                    const netTare = nets * netWtPerNet;
+                    return sum + Math.max(0, gross - netTare);
+                  }, 0)
+                : Number(t.grandTotalKgs || 52.4);
+
+              return (
+                <div key={idx} className="rounded-xl border border-slate-200 overflow-hidden space-y-0 mb-4 pdf-avoid-break">
+                  <div className="bg-slate-100 p-2.5 border-b border-slate-200 font-extrabold text-xs text-slate-800 flex items-center gap-1.5">
+                    <span>📦</span> <span>Tank {t.tank_name} Weighment Table ({rowsToDisplay.length} weighments)</span>
+                  </div>
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead className="bg-slate-900 text-white font-black uppercase text-[10px]">
+                      <tr>
+                        <th className="p-2.5">BOX #</th>
+                        <th className="p-2.5 text-center">GROSS WEIGHT (KG)</th>
+                        <th className="p-2.5 text-center">NETS</th>
+                        <th className="p-2.5 text-right">NET WEIGHT (KG)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium text-slate-800 bg-white">
+                      {rowsToDisplay.map((r, rIdx) => {
+                        const gross = Number(r.kgs || r.weight || 0);
+                        const nets = Number(r.nets ?? 2);
+                        const netTare = nets * netWtPerNet;
+                        const netWt = Math.max(0, gross - netTare);
+                        return (
+                          <tr key={r.id || rIdx} className="hover:bg-slate-50">
+                            <td className="p-2.5 font-bold text-slate-900">Box #{rIdx + 1}</td>
+                            <td className="p-2.5 text-center font-mono">{gross.toFixed(2)} KG</td>
+                            <td className="p-2.5 text-center text-slate-600">{nets} nets</td>
+                            <td className="p-2.5 text-right font-mono font-bold text-blue-700">{netWt.toFixed(3)} KG</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50 font-black text-xs border-t border-slate-200">
+                        <td colSpan={3} className="p-2.5 uppercase text-slate-900">TANK {t.tank_name} NET TOTAL:</td>
+                        <td className="p-2.5 text-right font-mono font-bold text-blue-700">{computedTankTotal.toFixed(3)} KG</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
-                <table className="w-full text-xs text-left border-collapse">
-                  <thead className="bg-slate-900 text-white font-black uppercase text-[10px]">
-                    <tr>
-                      <th className="p-2.5">BOX #</th>
-                      <th className="p-2.5 text-center">GROSS WEIGHT (KG)</th>
-                      <th className="p-2.5 text-center">NETS</th>
-                      <th className="p-2.5 text-right">NET WEIGHT (KG)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800 bg-white">
-                    <tr>
-                      <td className="p-2.5 font-bold text-slate-900">Box #1</td>
-                      <td className="p-2.5 text-center font-mono">56.00 KG</td>
-                      <td className="p-2.5 text-center text-slate-600">2 nets</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-blue-700">{(Number(t.grandTotalKgs) || 52.4).toFixed(3)} KG</td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-50 font-black text-xs border-t border-slate-200">
-                      <td colSpan={3} className="p-2.5 uppercase text-slate-900">TANK {t.tank_name} NET TOTAL:</td>
-                      <td className="p-2.5 text-right font-mono font-bold text-blue-700">{(Number(t.grandTotalKgs) || 52.4).toFixed(3)} KG</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* 3 Signatures */}
@@ -610,14 +703,20 @@ export default function OfficialBillDocument({ documentData, docType = 'bill', b
           {/* Top Badge */}
           <div className="flex justify-between items-center border-b border-slate-200 pb-3">
             <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-4 py-1 rounded-full text-xs font-black uppercase tracking-wider shadow-sm">
-              MIDDLE HARVEST REPORT
+              {docType === 'full_report' || harvest_type === 'full' || safeDocumentData?.harvest_type === 'full'
+                ? 'TANK FEED CONVERSION RATIO (FCR)'
+                : 'MIDDLE HARVEST REPORT'}
             </span>
             <span className="text-xs font-bold text-slate-500 font-mono">18/8/2026</span>
           </div>
 
           {/* Title */}
           <div>
-            <h2 className="text-2xl font-black text-slate-900">Middle Harvest Performance Report</h2>
+            <h2 className="text-2xl font-black text-slate-900">
+              {docType === 'full_report' || harvest_type === 'full' || safeDocumentData?.harvest_type === 'full'
+                ? 'Tank Feed Conversion Ratio (FCR)'
+                : 'Middle Harvest Performance Report'}
+            </h2>
           </div>
 
           {/* Performance Table */}
@@ -635,7 +734,12 @@ export default function OfficialBillDocument({ documentData, docType = 'bill', b
                   <th className="p-2.5 border-r border-slate-700 text-center">SURVIVAL %</th>
                   <th className="p-2.5 border-r border-slate-700 text-center bg-blue-900 text-blue-200">REMAINING SURVIVAL %</th>
                   <th colSpan={3} className="p-2.5 border-r border-slate-700 text-center bg-emerald-950 text-emerald-200">
-                    MIDDLE 1 (Date / Count / Tonnage (KG))
+                    MIDDLE 1
+                    <div className="grid grid-cols-3 border-t border-emerald-800/80 mt-1 pt-1 text-[9px] font-bold text-emerald-200">
+                      <span>Date</span>
+                      <span>Count</span>
+                      <span>Tonnage</span>
+                    </div>
                   </th>
                   <th className="p-2.5 border-r border-slate-700 text-right">TANK FEED (KG)</th>
                   <th className="p-2.5">HATCHERY NAME</th>

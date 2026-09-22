@@ -102,8 +102,8 @@ export default function MiddleReviewAndPayment({
       activeSubTab === 'middle-harvest-report'
         ? `Middle_Harvest_Report_${uasfBillNo}`
         : activeSubTab === 'uasf-rates'
-        ? `UASF_Rates_${uasfBillNo}`
-        : `Middle_Harvest_Bill_${uasfBillNo}`;
+          ? `UASF_Rates_${uasfBillNo}`
+          : `Middle_Harvest_Bill_${uasfBillNo}`;
     // Build the document metadata that will be stored in the bills table.
     const docDataObj = {
       bill_number: uasfBillNo,
@@ -122,6 +122,8 @@ export default function MiddleReviewAndPayment({
       paid_amount: 0,
       balance_amount: companyTotalAmount,
       savedTanks: savedTanks,
+      tanks: savedTanks,
+      weightRows: savedTanks.flatMap((t) => t.weightRows || []),
       bill_photo: billPhotoPreview,
       spotPhotos: spotPhotos,
       medicalLogs: medicalLogs,
@@ -129,6 +131,17 @@ export default function MiddleReviewAndPayment({
       grader_signature: graderSig,
       grader_rows: graderData.grader_rows || null,
       worker_rows: labourData.worker_rows || null,
+      grader_details: graderData,
+      labour_details: labourData,
+      billing_details: billingData,
+      harvest_details: {
+        savedTanks: savedTanks,
+        tanks: savedTanks,
+        weightRows: savedTanks.flatMap((t) => t.weightRows || []),
+        billingData,
+        graderData,
+        labourData,
+      },
     };
 
     // 1) Generate PDF blob (so we can persist it along with the bill)
@@ -277,9 +290,8 @@ export default function MiddleReviewAndPayment({
               key={tab.id}
               type="button"
               onClick={() => setActiveSubTab(tab.id)}
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeSubTab === tab.id ? `${tab.color} text-white shadow-md` : 'text-slate-300 hover:text-white hover:bg-slate-700'
-              }`}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${activeSubTab === tab.id ? `${tab.color} text-white shadow-md` : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
             >
               <span>{tab.icon}</span>
               <span>{tab.label}</span>
@@ -531,9 +543,8 @@ export default function MiddleReviewAndPayment({
       {/* ══════════════════════════════════════════════════════════════ */}
       {activeSubTab === 'middle-harvest-report' && (
         <div
-          className={`bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left ${
-            activeSubTab === 'middle-harvest-report' ? 'w-[1100px] mx-auto' : ''
-          }`}
+          className={`bg-white rounded-2xl p-6 border border-slate-200 shadow-card space-y-6 text-left ${activeSubTab === 'middle-harvest-report' ? 'w-[1100px] mx-auto' : ''
+            }`}
           id="printable-report-document"
         >
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">

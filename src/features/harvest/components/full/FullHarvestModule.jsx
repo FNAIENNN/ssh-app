@@ -171,6 +171,42 @@ export default function FullHarvestModule({ siteId, onFinished }) {
       const totalKgs = selectedBillingTanks.reduce((sum, t) => sum + t.grandTotalKgs, 0);
       const tankNames = selectedBillingTanks.map((t) => `Tank ${t.tank_name}`).join(', ');
       const todayDate = new Date().toISOString().slice(0, 10);
+      const docDataObj = {
+        bill_number: billNum,
+        date: todayDate,
+        site_name: billingData.farm_name || 'Farm Name',
+        buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
+        factory_name: graderData.factory_name || '',
+        grader_name: graderData.name || billingData.grader_name || '',
+        supervisor_name: billingData.harvest_supervisor || '',
+        supervisor_phone: billingData.supervisor_phone || '',
+        grader_phone: graderData.phone || billingData.grader_phone || '',
+        tank_name: tankNames,
+        harvest_type: 'full',
+        total_kgs: totalKgs,
+        price_per_kg: primaryTank?.pricePerKg || 0,
+        total_amount: Math.round(totalAmt),
+        paid_amount: 0,
+        balance_amount: Math.round(totalAmt),
+        savedTanks: selectedBillingTanks,
+        tanks: selectedBillingTanks,
+        weightRows: selectedBillingTanks.flatMap((t) => t.weightRows || []),
+        grader_rows: graderData.grader_rows || null,
+        worker_rows: labourData.worker_rows || null,
+        supervisor_signature: billingData.supervisor_signature || null,
+        grader_signature: graderData.grader_signature || null,
+        grader_details: graderData,
+        labour_details: labourData,
+        billing_details: billingData,
+        harvest_details: {
+          savedTanks: selectedBillingTanks,
+          tanks: selectedBillingTanks,
+          billingData,
+          graderData,
+          labourData,
+        },
+      };
+
       const { data: billRows, error: billErr } = await supabase
         .from(TABLES.bills)
         .insert({
@@ -178,6 +214,7 @@ export default function FullHarvestModule({ siteId, onFinished }) {
           bill_number: billNum,
           type: 'harvest',
           harvest_type: 'full',
+          report_type: 'full_bill',
           date: todayDate,
           tank_name: tankNames,
           kgs: parseFloat(totalKgs.toFixed(3)),
@@ -185,8 +222,16 @@ export default function FullHarvestModule({ siteId, onFinished }) {
           paid_amount: 0,
           balance_amount: Math.round(totalAmt),
           status: 'pending',
-          buyer_name: graderData.buyer_name || billingData.buying_company,
+          buyer_name: graderData.buyer_name || billingData.buying_company || 'Buying Company',
           created_by: user?.id,
+          document_data: docDataObj,
+          harvest_details: {
+            savedTanks: selectedBillingTanks,
+            tanks: selectedBillingTanks,
+            billingData,
+            graderData,
+            labourData,
+          },
         })
         .select();
       if (billErr) throw billErr;
@@ -460,14 +505,22 @@ export default function FullHarvestModule({ siteId, onFinished }) {
           )}
 
           {billingTab === 'labour' && (
-            <LabourDetailsForm labourData={labourData} setLabourData={setLabourData}
-              siteId={siteId} onProceed={() => setBillingTab('review')} onBack={() => setBillingTab('grader')} />
+            <LabourDetailsForm
+              labourData={labourData}
+              setLabourData={setLabourData}
+              siteId={siteId}
+              savedTanks={selectedBillingTanks.length > 0 ? selectedBillingTanks : savedTanks}
+              tanks={tanks}
+              onProceed={() => setBillingTab('review')}
+              onBack={() => setBillingTab('grader')}
+            />
           )}
 
           {billingTab === 'review' && (
             <ReviewAndPayment
               siteId={siteId}
               harvestType="full"
+              savedTanks={selectedBillingTanks.length > 0 ? selectedBillingTanks : savedTanks}
               selectedTank={primaryTank?.tank}
               tanks={tanks}
               billingData={billingData}
@@ -491,3 +544,4 @@ export default function FullHarvestModule({ siteId, onFinished }) {
     </div>
   );
 }
+

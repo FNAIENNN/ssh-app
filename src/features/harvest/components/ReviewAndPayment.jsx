@@ -17,6 +17,7 @@ const preventWheel = (e) => e.target.blur();
 export default function ReviewAndPayment({
   siteId,
   harvestType = 'middle',
+  savedTanks = [],
   selectedTank,
   tanks = [],
   billingData = {},
@@ -274,9 +275,8 @@ export default function ReviewAndPayment({
   };
 
   const persistCurrentDocument = async () => {
-    if (harvestType !== 'full') return;
-
     const docType = getCurrentDocTypeForSave();
+    const currentHarvestType = harvestType || 'full';
     const docDataObj = {
       bill_number: uasfBillNo,
       date: new Date().toISOString().slice(0, 10),
@@ -287,13 +287,14 @@ export default function ReviewAndPayment({
       grader_name: graderName,
       supervisor_name: supervisorName,
       tank_name: harvestTanks.map((t) => `Tank ${t.tank_name}`).join(', ') || 'Tank A1',
-      harvest_type: 'full',
+      harvest_type: currentHarvestType,
       total_kgs: totalHarvestKgs,
       price_per_kg: Number(pricePerKg) || 0,
       total_amount: companyTotalAmount,
       paid_amount: 0,
       balance_amount: companyTotalAmount,
       savedTanks: harvestTanks,
+      tanks: harvestTanks,
       weightRows,
       bill_photo: uploadedPhotoPreview,
       spotPhotos: spotPaymentPhotos,
@@ -302,6 +303,17 @@ export default function ReviewAndPayment({
       grader_signature: graderData.grader_signature || null,
       grader_rows: graderData.grader_rows || null,
       worker_rows: labourData.worker_rows || null,
+      grader_details: graderData,
+      labour_details: labourData,
+      billing_details: billingData,
+      harvest_details: {
+        savedTanks: harvestTanks,
+        tanks: harvestTanks,
+        weightRows,
+        billingData,
+        graderData,
+        labourData,
+      },
     };
 
     try {
@@ -309,7 +321,7 @@ export default function ReviewAndPayment({
         site_id: siteId,
         bill_number: uasfBillNo,
         type: 'harvest',
-        harvest_type: 'full',
+        harvest_type: currentHarvestType,
         report_type: docType,
         date: new Date().toISOString().slice(0, 10),
         tank_name: docDataObj.tank_name,
@@ -320,6 +332,14 @@ export default function ReviewAndPayment({
         status: 'pending',
         buyer_name: buyingCompanyName,
         document_data: docDataObj,
+        harvest_details: {
+          savedTanks: harvestTanks,
+          tanks: harvestTanks,
+          weightRows,
+          billingData,
+          graderData,
+          labourData,
+        },
       }).select();
 
       if (insertErr) throw insertErr;
@@ -339,9 +359,7 @@ export default function ReviewAndPayment({
   };
 
   const handleDownloadPDF = async (tabName) => {
-    if (harvestType === 'full') {
-      await persistCurrentDocument();
-    }
+    await persistCurrentDocument();
 
     const getPrintableId = () => {
       if (activeSubTab === 'harvest-bill') return 'printable-bill-document';
@@ -650,64 +668,75 @@ export default function ReviewAndPayment({
 
                 {enableWeighmentTable ? (
                   <div className="space-y-6">
-                    {harvestTanks.map((ht) => (
-                      <div key={ht.tank_id} className="space-y-2">
-                        <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5 bg-slate-100 p-2 rounded-lg border border-slate-200">
-                          <span>📦</span> Tank {ht.tank_name} Weighment Table ({weightRows.length} weighments)
-                        </h4>
-                        <div className="overflow-x-auto rounded-xl border border-slate-200">
-                          <table className="w-full text-xs text-left">
-                            <thead className="bg-slate-800 text-white font-extrabold text-[10px] uppercase">
-                              <tr>
-                                <th className="p-2.5">Box #</th>
-                                <th className="p-2.5">Gross Weight (KG)</th>
-                                <th className="p-2.5">Nets Count</th>
-                                <th className="p-2.5">Tare Weight (KG)</th>
-                                <th className="p-2.5 text-right">Net Weight (KG)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 font-mono text-slate-800 bg-white">
-                              {weightRows.length > 0 ? (
-                                weightRows.map((r, idx) => {
-                                  const gross = Number(r.kgs) || 0;
-                                  const nets = Number(r.nets) || 2;
-                                  const netTare = nets * (Number(billingData.net_weight) || 0);
-                                  const netWt = Math.max(0, gross - netTare);
-                                  return (
-                                    <tr key={idx} className="hover:bg-slate-50">
-                                      <td className="p-2.5 font-bold text-slate-900">Box #{idx + 1}</td>
-                                      <td className="p-2.5">{gross.toFixed(2)} KG</td>
-                                      <td className="p-2.5">{nets} nets</td>
-                                      <td className="p-2.5 text-slate-500">{netTare.toFixed(2)} KG</td>
-                                      <td className="p-2.5 text-right font-extrabold text-blue-700">
-                                        {netWt.toFixed(3)} KG
-                                      </td>
-                                    </tr>
-                                  );
-                                })
-                              ) : (
+                    {(savedTanks.length > 0 ? savedTanks : harvestTanks).map((ht, htIdx) => {
+                      const tankRows = ht.weightRows && ht.weightRows.length > 0 ? ht.weightRows : weightRows;
+                      const tankName = ht.tank_name || ht.name || `Tank A${htIdx + 1}`;
+                      const tankKgs = Number(ht.grandTotalKgs || ht.kgs || 0);
+                      const netWtPerNet = Number(ht.netWeightPerNet || billingData.net_weight || 0);
+
+                      return (
+                        <div key={ht.id || ht.tank_id || htIdx} className="space-y-2">
+                          <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                            <span>📦</span> Tank {tankName} Weighment Table ({tankRows.length} weighments)
+                          </h4>
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="w-full text-xs text-left">
+                              <thead className="bg-slate-800 text-white font-extrabold text-[10px] uppercase">
                                 <tr>
-                                  <td colSpan={5} className="p-4 text-center text-slate-400 font-sans">
-                                    No detailed weighments recorded for Tank {ht.tank_name}.
-                                  </td>
+                                  <th className="p-2.5">Box #</th>
+                                  <th className="p-2.5">Gross Weight (KG)</th>
+                                  <th className="p-2.5">Nets Count</th>
+                                  <th className="p-2.5">Tare Weight (KG)</th>
+                                  <th className="p-2.5 text-right">Net Weight (KG)</th>
                                 </tr>
-                              )}
-                            </tbody>
-                            <tfoot className="bg-slate-100 font-black text-xs text-slate-900 border-t border-slate-300">
-                              <tr>
-                                <td colSpan={4} className="p-2.5 uppercase">Tank {ht.tank_name} Net Total:</td>
-                                <td className="p-2.5 text-right font-mono text-blue-700 text-sm">{(Number(ht.kgs) || 0).toFixed(3)} KG</td>
-                              </tr>
-                            </tfoot>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 font-mono text-slate-800 bg-white">
+                                {tankRows.length > 0 ? (
+                                  tankRows.map((r, idx) => {
+                                    const gross = Number(r.kgs) || 0;
+                                    const nets = Number(r.nets) ?? 2;
+                                    const netTare = nets * netWtPerNet;
+                                    const netWt = Math.max(0, gross - netTare);
+                                    return (
+                                      <tr key={r.id || idx} className="hover:bg-slate-50">
+                                        <td className="p-2.5 font-bold text-slate-900">Box #{idx + 1}</td>
+                                        <td className="p-2.5">{gross.toFixed(2)} KG</td>
+                                        <td className="p-2.5">{nets} nets</td>
+                                        <td className="p-2.5 text-slate-500">{netTare.toFixed(2)} KG</td>
+                                        <td className="p-2.5 text-right font-extrabold text-blue-700">
+                                          {netWt.toFixed(3)} KG
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                ) : (
+                                  <tr>
+                                    <td colSpan={5} className="p-4 text-center text-slate-400 font-sans">
+                                      No detailed weighments recorded for Tank {tankName}.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                              <tfoot className="bg-slate-100 font-black text-xs text-slate-900 border-t border-slate-300">
+                                <tr>
+                                  <td colSpan={4} className="p-2.5 uppercase">Tank {tankName} Net Total:</td>
+                                  <td className="p-2.5 text-right font-mono text-blue-700 text-sm">{tankKgs.toFixed(3)} KG</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
                     <span>Weighment tables are currently hidden. Click "Enable" to display detailed per-tank box weighment tables.</span>
-                    <span className="font-bold font-mono text-blue-700">{weightRows.length} Weighment Rows</span>
+                    <span className="font-bold font-mono text-blue-700">
+                      {savedTanks.length > 0
+                        ? savedTanks.reduce((sum, t) => sum + (t.weightRows?.length || 0), 0)
+                        : weightRows.length} Weighment Rows
+                    </span>
                   </div>
                 )}
               </div>
@@ -832,37 +861,28 @@ export default function ReviewAndPayment({
               <table className="w-full text-xs text-left border-collapse">
                 <thead className="bg-slate-900 text-white text-[10px] font-extrabold uppercase tracking-wider">
                   <tr>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800">1. Tank no.</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800">2. No. of acres</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800">3. Seed stocking date</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800">4. Harvest date</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-center">5. No. of days</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right">6. Seed stocked</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right">7. Seed catched</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-center">8. Survival %</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right">9. Tank feed consumption</th>
-                    
-                    {/* Column 10: Middle Harvest with 3 UNMERGED sub-columns */}
-                    <th colSpan={3} className="p-2 border-r border-slate-800 text-center bg-emerald-950 text-emerald-300">
-                      10. Middle Harvest
-                    </th>
-
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right">11. Harvest</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right font-black text-amber-300">
+                    <th className="p-3 border-r border-slate-800">1. Tank no.</th>
+                    <th className="p-3 border-r border-slate-800">2. No. of acres</th>
+                    <th className="p-3 border-r border-slate-800">3. Seed stocking date</th>
+                    <th className="p-3 border-r border-slate-800">4. Harvest date</th>
+                    <th className="p-3 border-r border-slate-800 text-center">5. No. of days</th>
+                    <th className="p-3 border-r border-slate-800 text-right">6. Seed stocked</th>
+                    <th className="p-3 border-r border-slate-800 text-right">7. Seed catched</th>
+                    <th className="p-3 border-r border-slate-800 text-center">8. Survival %</th>
+                    <th className="p-3 border-r border-slate-800 text-right">9. Tank feed consumption</th>
+                    <th className="p-2 border-r border-slate-800 text-center bg-emerald-950 text-emerald-300">10. Middle Date</th>
+                    <th className="p-2 border-r border-slate-800 text-center bg-emerald-950 text-emerald-300">10. Count</th>
+                    <th className="p-2 border-r border-slate-800 text-center bg-emerald-950 text-emerald-300">10. Tonnage</th>
+                    <th className="p-3 border-r border-slate-800 text-right">11. Harvest</th>
+                    <th className="p-3 border-r border-slate-800 text-right font-black text-amber-300">
                       12. Tank yield (middle+harvest)
                     </th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-center font-black text-emerald-300">
+                    <th className="p-3 border-r border-slate-800 text-center font-black text-emerald-300">
                       13. Tank FCR
                     </th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right font-black text-blue-300">14. Total Feed (KG)</th>
-                    <th rowSpan={2} className="p-3 border-r border-slate-800 text-right">15. Yield/acre</th>
-                    <th rowSpan={2} className="p-3">16. Hatchery & branch</th>
-                  </tr>
-                  {/* Distinct sub-header row for Middle Harvest: Date, Count, Tonnage */}
-                  <tr className="bg-emerald-900 text-emerald-200 text-[9px] font-extrabold">
-                    <th className="p-2 border-r border-slate-800 text-center">Date</th>
-                    <th className="p-2 border-r border-slate-800 text-center">Count</th>
-                    <th className="p-2 border-r border-slate-800 text-center">Tonnage</th>
+                    <th className="p-3 border-r border-slate-800 text-right font-black text-blue-300">14. Total Feed (KG)</th>
+                    <th className="p-3 border-r border-slate-800 text-right">15. Yield/acre</th>
+                    <th className="p-3">16. Hatchery & branch</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-medium text-slate-800 bg-white">
@@ -1254,9 +1274,7 @@ export default function ReviewAndPayment({
             <button
               type="button"
               onClick={async () => {
-                if (harvestType === 'full') {
-                  await persistCurrentDocument();
-                }
+                await persistCurrentDocument();
                 await onGenerateBill();
               }}
               className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-extrabold text-xs shadow-md transition"
@@ -1284,3 +1302,4 @@ export default function ReviewAndPayment({
     </div>
   );
 }
+
