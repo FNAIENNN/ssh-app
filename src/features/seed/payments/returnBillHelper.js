@@ -1,41 +1,13 @@
 import { supabase, TABLES } from '../../../lib/supabaseClient';
+import { uploadPaymentEvidence } from '../../../components/payments/mediaEvidence';
 
 /**
- * Helper to upload photo/video to Supabase storage 'media' bucket
- * and return the serializable storage path/filename.
- * If upload fails (e.g. bucket does not exist or network error),
- * gracefully falls back to returning the dataUrl so bill creation is not blocked.
+ * Upload return evidence to Supabase storage and return only its object path.
+ * A failed or empty upload aborts the return so no bill can reference missing media.
  */
-export async function uploadReturnMedia(dataUrl, prefix) {
-  if (!dataUrl) return null;
-  // If already a remote path or URL, return as is
-  if (typeof dataUrl === 'string' && !dataUrl.startsWith('data:')) {
-    return dataUrl;
-  }
-
-  const isVideo = typeof dataUrl === 'string' && dataUrl.startsWith('data:video');
-  const ext = isVideo ? 'webm' : 'jpg';
-  const contentType = isVideo ? 'video/webm' : 'image/jpeg';
-
-  try {
-    const res = await fetch(dataUrl);
-    const blob = await res.blob();
-
-    const fileName = `${prefix}-${Date.now()}.${ext}`;
-    const { data, error } = await supabase.storage.from('media').upload(fileName, blob, { contentType });
-    if (error) {
-      console.warn('Storage media upload failed, falling back to dataUrl:', error.message || error);
-      return dataUrl;
-    }
-    if (data?.path) {
-      const { data: urlData } = supabase.storage.from('media').getPublicUrl(data.path);
-      return urlData?.publicUrl || data.path;
-    }
-    return fileName;
-  } catch (err) {
-    console.warn('uploadReturnMedia failed, falling back to dataUrl:', err.message || err);
-    return dataUrl;
-  }
+export async function uploadReturnMedia(media, prefix, folder = 'return-evidence') {
+  if (!media) return null;
+  return uploadPaymentEvidence(supabase.storage, media, prefix, folder);
 }
 
 /**
@@ -66,26 +38,19 @@ export async function generateReturnBill({
   const cleanVehicleNo = vehicleNo && vehicleNo !== 'N/A' ? vehicleNo : (activeOrder?.vehicle_no || '—');
   const cleanTankName = tankName && tankName !== 'N/A' ? tankName : '—';
 
-  // 1. Upload media first if present (non-blocking fallback)
+  // 1. Upload and verify media before creating the return bill.
   let photoPath = null;
   let videoPath = null;
 
   const mediaPrefixKey = (tankId || cleanTankName || 'tank').toString().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const orderKey = (activeOrder?.id || activeOrder?.bill_number || 'order').toString().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const vehicleKey = cleanVehicleNo.toString().replace(/[^a-zA-Z0-9_-]/g, '_');
+  const mediaFolder = `return-evidence/${orderKey}/${vehicleKey}/${mediaPrefixKey}`;
   if (photo) {
-    try {
-      photoPath = await uploadReturnMedia(photo, `return-photo-${mediaPrefixKey}`);
-    } catch (e) {
-      console.warn('Photo upload failed:', e);
-      photoPath = photo;
-    }
+    photoPath = await uploadReturnMedia(photo, 'photo', mediaFolder);
   }
   if (video) {
-    try {
-      videoPath = await uploadReturnMedia(video, `return-video-${mediaPrefixKey}`);
-    } catch (e) {
-      console.warn('Video upload failed:', e);
-      videoPath = video;
-    }
+    videoPath = await uploadReturnMedia(video, 'video', mediaFolder);
   }
 
   const now = new Date();

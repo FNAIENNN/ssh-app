@@ -158,6 +158,62 @@ export function getPackingSourceTanks(activeOrder, fallbackTanks = []) {
   return [...new Set(tanksByKey.values())];
 }
 
+function eventTime(value) {
+  const time = new Date(value || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+/**
+ * A tank is active for Additional Stocking only while its latest physical
+ * stocking is newer than its latest completed Trail Netting report.
+ */
+export function isTankInActiveSeedCycle(tank, seedEntries = [], trailReports = []) {
+  if (!tank?.start_date || Number(tank.quantity) <= 0) return false;
+
+  const tankId = String(tank.id || '');
+  const tankName = String(tank.name || '').trim().toLowerCase();
+  const belongsToTank = (row) => (
+    (row?.tank_id != null && String(row.tank_id) === tankId) ||
+    (row?.tank_name && String(row.tank_name).trim().toLowerCase() === tankName)
+  );
+
+  const latestStocking = seedEntries
+    .filter((entry) => belongsToTank(entry) && (!entry.source || entry.source === 'stocked'))
+    .reduce((latest, entry) => Math.max(latest, eventTime(entry.created_at || entry.date)), eventTime(tank.start_date));
+
+  const latestCompletedReport = trailReports
+    .filter((report) => belongsToTank(report) && report.process_details?.status !== 'draft')
+    .reduce((latest, report) => Math.max(
+      latest,
+      eventTime(report.updated_at || report.created_at || report.latest_date || report.process_details?.date),
+    ), 0);
+
+  return latestCompletedReport === 0 || latestStocking > latestCompletedReport;
+}
+
+export function buildTankStockingSnapshot({ matchedTank, newQuantity, hatchery, stockingDate }) {
+  const incomingQuantity = Number(newQuantity) || 0;
+  if (!matchedTank?.is_active_seed_cycle) {
+    return {
+      quantity: incomingQuantity,
+      seed_type: 'Vannamei',
+      hatchery: hatchery || null,
+      start_date: stockingDate,
+    };
+  }
+
+  const hatcheries = String(matchedTank.hatchery || '').split(' + ').map((name) => name.trim()).filter(Boolean);
+  const incomingHatchery = String(hatchery || '').trim();
+  if (incomingHatchery && !hatcheries.includes(incomingHatchery)) hatcheries.push(incomingHatchery);
+
+  return {
+    quantity: (Number(matchedTank.quantity) || 0) + incomingQuantity,
+    seed_type: 'Vannamei',
+    hatchery: hatcheries.join(' + ') || null,
+    start_date: matchedTank.start_date || stockingDate,
+  };
+}
+
 /**
  * Extract vehicle IDs assigned to Seed Van Plan and Packing from activeOrder and local state.
  *

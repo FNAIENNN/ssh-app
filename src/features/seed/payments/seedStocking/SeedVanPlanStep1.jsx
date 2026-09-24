@@ -16,6 +16,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { supabase } from '../../../../lib/supabaseClient';
 import CameraCapture from '../../../../components/ui/CameraCapture';
+import { uploadReturnMedia } from '../returnBillHelper';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -455,37 +456,13 @@ export default function SeedVanPlanStep1({
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
-
-  const uploadMedia = async (dataUrl, prefix) => {
-    if (!dataUrl) return null;
-    if (typeof dataUrl === 'string' && !dataUrl.startsWith('data:')) return dataUrl;
-    const isVideo = typeof dataUrl === 'string' && dataUrl.startsWith('data:video');
-    const ext = isVideo ? 'webm' : 'jpg';
-    const contentType = isVideo ? 'video/webm' : 'image/jpeg';
-
-    try {
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-
-      const fileName = `${prefix}-${Date.now()}.${ext}`;
-      const { data, error } = await supabase.storage.from('media').upload(fileName, blob, { contentType });
-      if (error) {
-        console.warn('Storage media upload failed:', error.message || error);
-        return null;
-      }
-      return data?.path || fileName;
-    } catch (err) {
-      console.warn('uploadMedia failed:', err.message || err);
-      return null;
-    }
-  };
-
+  
   const handleReturnSubmit = async (tankName, qty, packets, maxQty, reason, photo, video) => {
     let photoPath = null;
     let videoPath = null;
 
-    if (photo) photoPath = await uploadMedia(photo, `return-photo-${tankName}`);
-    if (video) videoPath = await uploadMedia(video, `return-video-${tankName}`);
+    if (photo) photoPath = await uploadReturnMedia(photo, `photo`, `return-evidence/seed-van/${tankName}`);
+    if (video) videoPath = await uploadReturnMedia(video, `video`, `return-evidence/seed-van/${tankName}`);
 
     const q = Number(qty);
     const tankObj = allTanks.find(t => t.name === tankName);

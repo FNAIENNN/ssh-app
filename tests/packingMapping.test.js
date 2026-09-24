@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
     getAssignedVehicleIds,
+    buildTankStockingSnapshot,
     getPackingSourceTanks,
+    isTankInActiveSeedCycle,
     vehicleHasTank,
 } from '../src/features/seed/payments/seedStocking/stockingUtils.js';
 
@@ -19,6 +21,44 @@ test('normal Packing resolves one vehicle and one tank from booking data', () =>
 
     assert.equal(sourceTanks.length, 1);
     assert.equal(vehicleHasTank(vehicle, sourceTanks[0]), true);
+});
+
+test('Trail Netting history tanks are not treated as Additional Stocking', () => {
+    const tank = { id: 'tank-1', name: 'A1', start_date: '2026-01-01', quantity: 100000 };
+    const entries = [{ tank_id: 'tank-1', date: '2026-01-01', source: 'stocked' }];
+    const reports = [{ tank_id: 'tank-1', latest_date: '2026-02-15', process_details: { status: 'completed' } }];
+
+    assert.equal(isTankInActiveSeedCycle(tank, entries, reports), false);
+});
+
+test('a tank stocked after its previous Trail Netting report is active again', () => {
+    const tank = { id: 'tank-1', name: 'A1', start_date: '2026-01-01', quantity: 40000 };
+    const entries = [
+        { tank_id: 'tank-1', date: '2026-01-01', source: 'stocked' },
+        { tank_id: 'tank-1', date: '2026-03-01', source: 'stocked' },
+    ];
+    const reports = [{ tank_id: 'tank-1', latest_date: '2026-02-15', process_details: { status: 'completed' } }];
+
+    assert.equal(isTankInActiveSeedCycle(tank, entries, reports), true);
+});
+
+test('fresh stocking after Trail Netting history resets quantity and cycle date', () => {
+    const snapshot = buildTankStockingSnapshot({
+        matchedTank: {
+            id: 'tank-1',
+            quantity: 89000,
+            start_date: '2026-08-01',
+            hatchery: 'Old Hatchery',
+            is_active_seed_cycle: false,
+        },
+        newQuantity: 9000,
+        hatchery: 'New Hatchery',
+        stockingDate: '2026-09-24',
+    });
+
+    assert.equal(snapshot.quantity, 9000);
+    assert.equal(snapshot.start_date, '2026-09-24');
+    assert.equal(snapshot.hatchery, 'New Hatchery');
 });
 
 test('normal Packing keeps multiple vehicle assignments separate', () => {

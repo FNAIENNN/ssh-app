@@ -18,6 +18,8 @@ test('uses the recorded MIME type for the matching file extension', () => {
     assert.equal(extensionForMimeType('audio/mp4'), 'm4a');
     assert.equal(extensionForMimeType('audio/ogg; codecs=opus'), 'ogg');
     assert.equal(extensionForMimeType('image/png'), 'png');
+    assert.equal(extensionForMimeType('video/webm'), 'webm');
+    assert.equal(extensionForMimeType('video/mp4'), 'mp4');
 });
 
 test('resolves legacy public URLs through an authenticated signed URL', async () => {

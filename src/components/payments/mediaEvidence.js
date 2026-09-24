@@ -1,5 +1,3 @@
-import { isDemoMode } from '../../lib/supabaseClient';
-
 export const MEDIA_BUCKET = 'media';
 
 function unwrapStoredMedia(value) {
@@ -64,11 +62,14 @@ export function extensionForMimeType(mimeType = '') {
         'audio/mpeg': 'mp3',
         'audio/wav': 'wav',
         'audio/x-wav': 'wav',
+        'video/webm': 'webm',
+        'video/mp4': 'mp4',
+        'video/ogg': 'ogv',
     };
     return extensions[type] || (type.startsWith('audio/') ? type.slice(6) : 'bin');
 }
 
-export async function uploadPaymentEvidence(storage, source, prefix) {
+export async function uploadPaymentEvidence(storage, source, prefix, folder = 'payment-evidence') {
     if (!source) return null;
 
     let blob = source;
@@ -77,17 +78,9 @@ export async function uploadPaymentEvidence(storage, source, prefix) {
     }
     if (!(blob instanceof Blob)) return normalizeMediaPath(blob);
 
-    if (isDemoMode) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
-    }
-
     const contentType = blob.type || 'application/octet-stream';
-    const objectPath = `payment-evidence/${prefix}-${Date.now()}-${crypto.randomUUID()}.${extensionForMimeType(contentType)}`;
+    if (!blob.size) throw new Error('Cannot upload empty media');
+    const objectPath = `${folder}/${prefix}-${Date.now()}-${crypto.randomUUID()}.${extensionForMimeType(contentType)}`;
     const { data, error } = await storage.from(MEDIA_BUCKET).upload(objectPath, blob, {
         contentType,
         upsert: false,
@@ -96,6 +89,13 @@ export async function uploadPaymentEvidence(storage, source, prefix) {
 
     const savedPath = normalizeMediaPath(data?.path || data?.fullPath || objectPath);
     if (!savedPath) throw new Error('Storage upload did not return a valid media object path');
+
+    const bucket = storage.from(MEDIA_BUCKET);
+    if (typeof bucket.download === 'function') {
+        const { data: downloaded, error: downloadError } = await bucket.download(savedPath);
+        if (downloadError) throw downloadError;
+        if (!downloaded?.size) throw new Error('Uploaded media object is empty');
+    }
     return savedPath;
 }
 
@@ -109,8 +109,12 @@ export async function resolvePaymentEvidenceUrl(storage, storedValue, expiresIn 
     const path = normalizeMediaPath(original);
     if (!path) return /^https?:\/\//i.test(original) ? original : null;
 
-    // Use getPublicUrl directly since MEDIA_BUCKET is public.
-    // Signed URLs can sometimes generate valid tokens that fail to load in public buckets.
+    if (typeof storage.from(MEDIA_BUCKET).createSignedUrl === 'function') {
+        const { data, error } = await storage.from(MEDIA_BUCKET).createSignedUrl(path, expiresIn);
+        if (!error && data?.signedUrl) return data.signedUrl;
+    }
+
+    // Public buckets and the local demo client do not need signing.
     const publicUrl = storage.from(MEDIA_BUCKET).getPublicUrl(path)?.data?.publicUrl;
     return publicUrl || (/^https?:\/\//i.test(original) ? original : null);
 }

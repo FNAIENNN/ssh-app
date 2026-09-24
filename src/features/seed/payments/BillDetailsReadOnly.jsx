@@ -80,7 +80,7 @@ function EmptyNote({ text }) {
   return <p className="text-xs text-text-muted italic">{text}</p>;
 }
 
-function PaymentEvidence({ value, kind, onOpenImage, className }) {
+function useResolvedEvidenceUrl(value) {
   const [url, setUrl] = useState(null);
   const [failed, setFailed] = useState(false);
 
@@ -98,6 +98,12 @@ function PaymentEvidence({ value, kind, onOpenImage, className }) {
     return () => { active = false; };
   }, [value]);
 
+  return { url, failed };
+}
+
+function PaymentEvidence({ value, kind, onOpenImage, className }) {
+  const { url, failed } = useResolvedEvidenceUrl(value);
+
   if (failed) return <span className="text-[10px] text-red-600 font-semibold">Evidence unavailable</span>;
   if (!url) return <span className="text-[10px] text-text-muted">Loading…</span>;
   if (kind === 'audio') {
@@ -108,6 +114,43 @@ function PaymentEvidence({ value, kind, onOpenImage, className }) {
       <span className="text-sm">📷</span>
       <span className="text-[11px] font-bold whitespace-nowrap">View Photo</span>
     </button>
+  );
+}
+
+function ReturnEvidence({ photo, video, onOpenImage }) {
+  const photoState = useResolvedEvidenceUrl(photo);
+  const videoState = useResolvedEvidenceUrl(video);
+
+  return (
+    <div className="mt-4 pt-4 border-t flex flex-wrap gap-4">
+      {photo && (
+        <div className="space-y-2">
+          <span className="text-text-muted font-bold block text-xs">Attached Photo</span>
+          {photoState.failed ? (
+            <span className="text-xs text-red-600 font-semibold">Photo unavailable</span>
+          ) : photoState.url ? (
+            <div className="space-y-2">
+              <img src={photoState.url} alt="Return Evidence" className="h-24 w-32 rounded border object-cover bg-slate-900" />
+              <button type="button" onClick={() => onOpenImage(photoState.url)} className="text-xs font-bold text-blue-800 underline">View Photo</button>
+            </div>
+          ) : (
+            <span className="text-xs text-text-muted">Loading photo…</span>
+          )}
+        </div>
+      )}
+      {video && (
+        <div className="space-y-2">
+          <span className="text-text-muted font-bold block text-xs">View Video</span>
+          {videoState.failed ? (
+            <span className="text-xs text-red-600 font-semibold">Video unavailable</span>
+          ) : videoState.url ? (
+            <video src={videoState.url} controls preload="metadata" className="max-h-48 rounded border max-w-xs bg-slate-900" />
+          ) : (
+            <span className="text-xs text-text-muted">Loading video…</span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -414,8 +457,8 @@ export default function BillDetailsReadOnly({
   if (!bill) return null;
 
   // ── Data extraction ───────────────────────────────────────────────────────
-  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle' && p.type?.toLowerCase() !== 'outside_worker' && p.type?.toLowerCase() !== 'outside worker');
-  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle' && p.type?.toLowerCase() !== 'outside_worker' && p.type?.toLowerCase() !== 'outside worker');
+  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle');
+  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle');
   const vanPlan = bill.van_plan;
   const stockingData = bill.stocking_status_data;
   const workersData = bill.outside_workers_data;
@@ -707,20 +750,11 @@ export default function BillDetailsReadOnly({
               </div>
             )}
             {(docData.photo || pd.photo || docData.video || pd.video) && (
-              <div className="mt-4 pt-4 border-t flex flex-wrap gap-4">
-                {(docData.photo || pd.photo) && (
-                  <div>
-                    <span className="text-text-muted font-bold block mb-1 text-xs">Attached Photo</span>
-                    <img src={docData.photo || pd.photo} alt="Return Evidence" className="max-h-48 rounded border object-contain bg-slate-900" />
-                  </div>
-                )}
-                {(docData.video || pd.video) && (
-                  <div>
-                    <span className="text-text-muted font-bold block mb-1 text-xs">Attached Video</span>
-                    <video src={docData.video || pd.video} controls className="max-h-48 rounded border max-w-xs bg-slate-900" />
-                  </div>
-                )}
-              </div>
+              <ReturnEvidence
+                photo={docData.photo || pd.photo}
+                video={docData.video || pd.video}
+                onOpenImage={setPreviewImage}
+              />
             )}
           </SectionCard>
 
@@ -901,13 +935,14 @@ export default function BillDetailsReadOnly({
           <SectionCard title="Return Details" icon="↩">
             <div className="space-y-4">
               {returnBills.map((rBill, idx) => {
-                const pd = rBill.packing_data || {};
+                const returnDoc = rBill.document_data || {};
+                const pd = rBill.packing_data || returnDoc.packing_data || {};
                 const isRetBill = rBill.type === 'return_bill';
-                const rQty = isRetBill ? Number(rBill.seed_count_returned || 0) : Number(pd.quantity || pd.returned_qty || 0);
+                const rQty = isRetBill ? Number(rBill.seed_count_returned || returnDoc.seed_count_returned || returnDoc.returned_qty || 0) : Number(pd.quantity || pd.returned_qty || 0);
 
                 // Try to find original tank quantity
                 let origQty = 0;
-                let actualTankName = isRetBill ? (rBill.drum_name || rBill.original_tank) : pd.tank_name;
+                let actualTankName = isRetBill ? (rBill.drum_name || rBill.original_tank || returnDoc.drum_name || returnDoc.original_tank || returnDoc.tank_name) : pd.tank_name;
 
                 if (actualTankName) {
                   const t = selectedTanks.find(st => st.name === actualTankName);
@@ -943,9 +978,16 @@ export default function BillDetailsReadOnly({
                       {origQty > 0 && (
                         <InfoField label="Remaining Quantity" value={`${remainingQty.toLocaleString('en-IN')} pcs`} />
                       )}
-                      <InfoField label="Return Date" value={pd.return_date || new Date(rBill.created_at).toLocaleDateString('en-IN')} />
-                      {(pd.reason || rBill.reason) && <InfoField label="Reason" value={pd.reason || rBill.reason} />}
+                      <InfoField label="Return Date" value={pd.return_date || returnDoc.return_date || new Date(rBill.created_at).toLocaleDateString('en-IN')} />
+                      {(pd.reason || returnDoc.reason || rBill.reason) && <InfoField label="Reason" value={pd.reason || returnDoc.reason || rBill.reason} />}
                     </div>
+                    {(returnDoc.photo || pd.photo || returnDoc.video || pd.video) && (
+                      <ReturnEvidence
+                        photo={returnDoc.photo || pd.photo}
+                        video={returnDoc.video || pd.video}
+                        onOpenImage={setPreviewImage}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -1514,7 +1556,7 @@ export default function BillDetailsReadOnly({
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setPreviewImage(null)}>
           <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center p-4 border-b border-white/10 bg-black/40">
-              <h3 className="text-white font-bold text-sm">Bank Screenshot</h3>
+              <h3 className="text-white font-bold text-sm">Photo Evidence</h3>
               <button type="button" onClick={() => setPreviewImage(null)} className="text-white hover:text-red-400 font-bold px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg transition text-xs">Close</button>
             </div>
             <div className="p-4 overflow-auto flex justify-center items-center h-full bg-slate-900/50 min-h-[300px]">

@@ -142,7 +142,7 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
       const remainingQty = currentRemQty - qty;
       const finalRemainingPackets = currentRemPackets - returnedPackets;
 
-      const { bill: newBill } = await generateReturnBill({
+      const { bill: newBill, photoPath, videoPath } = await generateReturnBill({
         siteId,
         userId: user?.id,
         activeOrder,
@@ -188,15 +188,22 @@ export default function PackingSelection({ tanks, setTanks, vehicles = [], activ
         remainingQty: remainingQty,
         remainingPackets: finalRemainingPackets,
         reason: returnReason || '—',
-        photo: returnPhoto,
-        video: returnVideo,
+        photo: photoPath,
+        video: videoPath,
         billNumber: newBill.bill_number || newBill.id,
         status: 'Returned'
       });
 
       const newTanksState = tanks.map(t => {
         if (t.id === activeTank.id) {
-          const returnsArr = [...(t.returns || []), { quantity: qty, packets: returnedPackets }];
+          const returnsArr = [...(t.returns || []), {
+            returnBillId: newBill.id,
+            quantity: qty,
+            packets: returnedPackets,
+            reason: returnReason,
+            photo: photoPath,
+            video: videoPath,
+          }];
           return {
             ...t,
             originalQuantity: t.originalQuantity != null ? t.originalQuantity : t.quantity,

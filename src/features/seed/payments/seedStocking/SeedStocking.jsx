@@ -13,7 +13,7 @@ import PackingOutsideWorkers from '../packing/PackingOutsideWorkers';
 import MixedAllocation from './MixedAllocation';
 import AdditionalStockingReview from './AdditionalStockingReview';
 import { useMixedAllocationState } from './useMixedAllocationState';
-import { getAssignedVehicleIds, aggregateTankStates, getPackingSourceTanks } from './stockingUtils';
+import { getAssignedVehicleIds, aggregateTankStates, getPackingSourceTanks, isTankInActiveSeedCycle, buildTankStockingSnapshot } from './stockingUtils';
 
 export default function SeedStocking({ siteId, stockingOrder = null, onStockingCompleted = null }) {
   const { user } = useAuth();
@@ -71,7 +71,12 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
 
   const loadSiteTanks = async () => {
     if (!siteId) return;
-    const [{ data, error }, { data: trailRecords, error: trailError }] = await Promise.all([
+    const [
+      { data, error },
+      { data: trailRecords, error: trailError },
+      { data: trailReports, error: reportError },
+      { data: seedEntries, error: seedEntryError },
+    ] = await Promise.all([
       supabase
         .from(TABLES.tanks)
         .select('id, name, start_date, quantity, hatchery')
@@ -81,12 +86,22 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
         .select('tank_id, date, final_count')
         .eq('site_id', siteId)
         .order('date', { ascending: true }),
+      supabase
+        .from(TABLES.trailNettingReports)
+        .select('tank_id, latest_date, process_details, updated_at, created_at')
+        .eq('site_id', siteId),
+      supabase
+        .from(TABLES.seedEntries)
+        .select('tank_id, date, created_at, source')
+        .eq('site_id', siteId),
     ]);
     if (error) {
       console.error('loadSiteTanks error:', error);
       return;
     }
     if (trailError) console.error('loadSiteTanks trail records error:', trailError);
+    if (reportError) console.error('loadSiteTanks trail reports error:', reportError);
+    if (seedEntryError) console.error('loadSiteTanks seed entries error:', seedEntryError);
     const latestTrailByTank = new Map();
     (trailRecords || []).forEach((record) => latestTrailByTank.set(String(record.tank_id), record));
     if (data) {
@@ -96,6 +111,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
           ...tank,
           latest_trail_count: latestTrail?.final_count ?? null,
           latest_trail_date: latestTrail?.date ?? null,
+          is_active_seed_cycle: isTankInActiveSeedCycle(tank, seedEntries || [], trailReports || []),
         };
       }));
     }
@@ -304,7 +320,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
         const matchedTank = siteTanks.find(
           (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
         );
-        if (matchedTank && matchedTank.start_date && Number(matchedTank.quantity) > 0) {
+        if (matchedTank?.is_active_seed_cycle) {
           activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
         }
       }
@@ -350,7 +366,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
       const matchedTank = siteTanks.find(
         (tank) => String(tank.name).trim().toLowerCase() === String(tState.tankName).trim().toLowerCase()
       );
-      if (matchedTank?.start_date && Number(matchedTank.quantity) > 0 && Number(tState.currentCount) > 0) {
+      if (matchedTank?.is_active_seed_cycle && Number(tState.currentCount) > 0) {
         activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
       }
     }
@@ -525,10 +541,15 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     }
 
     if (Object.keys(allTankStates).length > 0) {
-      const { data: siteTanks } = await supabase
+      const { data: freshSiteTanks } = await supabase
         .from(TABLES.tanks)
         .select('id, name, start_date, quantity, hatchery')
         .eq('site_id', siteId);
+      const activeCycleById = new Map(siteTanks.map((tank) => [String(tank.id), tank.is_active_seed_cycle]));
+      const persistedSiteTanks = (freshSiteTanks || []).map((tank) => ({
+        ...tank,
+        is_active_seed_cycle: activeCycleById.get(String(tank.id)) === true,
+      }));
 
       // Verify the signature hasn't changed since they reviewed it
       const currentSignature = generateAllocationSignature(finalAllocationMap);
@@ -540,10 +561,10 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
         for (const [key, tState] of Object.entries(allTankStates)) {
           if (tState.status === 'completed' && Number(tState.currentCount) > 0) {
             const actualTankName = String(tState.tankName || key).trim();
-            const matchedTank = siteTanks?.find(
+            const matchedTank = persistedSiteTanks.find(
               (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
             );
-            if (matchedTank?.start_date && Number(matchedTank.quantity) > 0) {
+            if (matchedTank?.is_active_seed_cycle) {
               activeTanksToReview.push({ matchedTank, newQuantity: tState.currentCount });
             }
           }
@@ -563,32 +584,18 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
         if (tState.status === 'completed' && Number(tState.currentCount) > 0) {
           const actualTankName = String(tState.tankName || key).trim();
 
-          const matchedTank = siteTanks?.find(
+          const matchedTank = persistedSiteTanks.find(
             (t) => String(t.name).trim().toLowerCase() === actualTankName.toLowerCase()
           );
 
-          let newQuantity = tState.currentCount;
-          let newHatchery = activeOrder.hatchery || null;
-          let newStartDate = stockingDate;
-
-          if (matchedTank?.id && matchedTank.start_date && Number(matchedTank.quantity) > 0) {
-            // Preserving the existing start date!
-            newStartDate = matchedTank.start_date || stockingDate;
-            newQuantity = (Number(matchedTank.quantity) || 0) + Number(tState.currentCount);
-
-            const existingHatcheries = (matchedTank.hatchery || '').split(' + ').map(s => s.trim()).filter(Boolean);
-            const addingHatchery = activeOrder.hatchery ? activeOrder.hatchery.trim() : '';
-            if (addingHatchery && !existingHatcheries.includes(addingHatchery)) {
-              existingHatcheries.push(addingHatchery);
-            }
-            newHatchery = existingHatcheries.join(' + ');
-          }
-
           const tankData = {
-            quantity: newQuantity,
+            ...buildTankStockingSnapshot({
+              matchedTank,
+              newQuantity: tState.currentCount,
+              hatchery: activeOrder.hatchery,
+              stockingDate,
+            }),
             seed_type: activeOrder.seed_type || 'Vannamei',
-            hatchery: newHatchery,
-            start_date: newStartDate,
           };
 
           let resolvedTankId = matchedTank?.id || null;
@@ -751,18 +758,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
           vehicles={vehicles}
           activeOrder={activeOrder}
           onComplete={async (step3Data) => {
-            if (activeOrder?.id) {
-              const newStatus = 'Completed';
-              // Save it to outside_workers_data to unify, not packing_outside_workers_data
-              await autosaveBillStep(
-                supabase, TABLES, activeOrder.id,
-                { outside_workers_data: step3Data, status: newStatus, completion_timestamp: new Date().toISOString() },
-                'Packing Outside Workers Completed',
-                user?.email
-              );
-            }
-            toast.success('Packing Outside Workers Completed!');
-            if (onStockingCompleted) onStockingCompleted(activeOrder);
+            await handleFinalComplete(step3Data);
             setSeedMode('history');
           }}
           onBack={() => setSeedMode('packing')}
