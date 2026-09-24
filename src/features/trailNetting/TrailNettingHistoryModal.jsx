@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatDate } from '../../hooks/useTrailNettingCadence';
 import { downloadPDF } from '../../lib/pdfGenerator';
 import { useToast } from '../../hooks/useToast';
+import { supabase } from '../../lib/supabaseClient';
+import { resolvePaymentEvidenceUrl } from '../../components/payments/mediaEvidence';
 
 function fmt(val) {
     if (val == null || val === '') return '—';
@@ -25,13 +27,22 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
     const modalContentRef = useRef(null);
     const toast = useToast();
     const [downloading, setDownloading] = useState(false);
-
-    if (!isOpen || (!tank && !report)) return null;
+    const [resolvedPhotos, setResolvedPhotos] = useState([]);
+    const [resolvingPhotos, setResolvingPhotos] = useState(false);
 
     const latestRec = recordsList.length > 0 ? recordsList[recordsList.length - 1] : null;
 
-    // Extract process details stored in report or record
-    const pDetails = report?.process_details || latestRec?.process_details || {};
+    // Safely parse process_details if they are stored as JSON strings
+    const parseDetails = (data) => {
+        if (!data) return {};
+        if (typeof data === 'string') {
+            try { return JSON.parse(data); } catch { return {}; }
+        }
+        return data;
+    };
+
+    const pDetails = parseDetails(report?.process_details) || parseDetails(latestRec?.process_details) || {};
+    const lrDetails = parseDetails(latestRec?.process_details) || {};
 
     const tankName = tank?.name || pDetails?.tank_name || report?.tank_name || `Tank ${report?.tank_id || ''}`;
     const sectionName = tank?.sections?.name || pDetails?.section_name || '—';
@@ -47,14 +58,47 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
     const checklist = pDetails?.checklist || null;
 
     // Samples — use only real saved data
-    const samples = pDetails?.samples || latestRec?.samples || [];
+    const samples = pDetails?.samples || latestRec?.samples || lrDetails?.samples || [];
 
     // Diseases & Remarks
-    const diseases = pDetails?.diseases || latestRec?.diseases || [];
-    const remarks = pDetails?.remarks || latestRec?.remarks || '';
+    const diseases = pDetails?.diseases || latestRec?.diseases || lrDetails?.diseases || [];
+    const remarks = pDetails?.remarks || latestRec?.remarks || lrDetails?.remarks || '';
 
     // Photos
-    const photos = pDetails?.photos || latestRec?.photos || [];
+    const rawPhotos = pDetails?.photos || latestRec?.photos || lrDetails?.photos || [];
+
+    useEffect(() => {
+        if (!isOpen || rawPhotos.length === 0) {
+            setResolvedPhotos([]);
+            return;
+        }
+
+        let isMounted = true;
+        setResolvingPhotos(true);
+
+        const resolveAll = async () => {
+            try {
+                const resolved = await Promise.all(
+                    rawPhotos.map(async (p) => {
+                        if (!p) return null;
+                        if (typeof p === 'string' && (p.startsWith('data:') || p.startsWith('blob:'))) {
+                            return p;
+                        }
+                        const resolvedUrl = await resolvePaymentEvidenceUrl(supabase.storage, p, 7200);
+                        return resolvedUrl || p;
+                    })
+                );
+                if (isMounted) setResolvedPhotos(resolved.filter(Boolean));
+            } catch (err) {
+                console.error("Error resolving photos:", err);
+                if (isMounted) setResolvedPhotos(rawPhotos); // fallback
+            } finally {
+                if (isMounted) setResolvingPhotos(false);
+            }
+        };
+        resolveAll();
+        return () => { isMounted = false; };
+    }, [isOpen, rawPhotos]);
 
     const handleDownloadPDF = async () => {
         if (!modalContentRef.current) return;
@@ -73,6 +117,8 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
             setDownloading(false);
         }
     };
+
+    if (!isOpen || (!tank && !report)) return null;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
@@ -230,25 +276,32 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
                 </div>
 
                 {/* 5. Photos Captured / Uploaded */}
-                {photos && photos.length > 0 && (
+                {(rawPhotos.length > 0 || resolvedPhotos.length > 0) && (
                     <div className="space-y-2">
                         <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                            <span>📷</span> Captured Trail Netting Photos ({photos.length})
+                            <span>📷</span> Captured Trail Netting Photos ({rawPhotos.length})
                         </h3>
-                        <div className="flex flex-wrap gap-3">
-                            {photos.map((p, idx) => (
-                                <div key={idx} className="w-24 h-24 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 shadow-sm flex items-center justify-center">
-                                    {typeof p === 'string' && (p.startsWith('data:') || p.startsWith('http')) ? (
-                                        <img src={p} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="text-center p-2">
-                                            <span className="text-2xl">📷</span>
-                                            <span className="block text-[9px] text-slate-500 font-bold truncate">Photo {idx + 1}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
+                        {resolvingPhotos ? (
+                            <div className="text-xs text-slate-500 animate-pulse flex items-center gap-2">
+                                <span className="inline-block w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin"></span>
+                                Resolving photos...
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-3">
+                                {resolvedPhotos.map((p, idx) => (
+                                    <div key={idx} className="w-24 h-24 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 shadow-sm flex items-center justify-center">
+                                        {typeof p === 'string' && (p.startsWith('data:') || p.startsWith('blob:') || p.startsWith('http')) ? (
+                                            <img src={p} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="text-center p-2">
+                                                <span className="text-2xl">📷</span>
+                                                <span className="block text-[9px] text-slate-500 font-bold truncate">Photo {idx + 1}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -361,7 +414,7 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
                     <button
                         onClick={handleDownloadPDF}
                         disabled={downloading}
-                        className="btn-primary bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-1.5 border-none rounded-xl"
+                        className="btn-primary bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold px-5 py-3 flex items-center justify-center gap-2 border-none rounded-xl transition-colors shadow-lg w-full md:w-auto"
                     >
                         {downloading ? '⏳ Exporting...' : '📄 Download Complete Report PDF'}
                     </button>

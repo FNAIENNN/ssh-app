@@ -45,7 +45,7 @@ export default function OutsideWorkersStep3({
     WORKER_ROWS.map((r) => ({ ...r, quantity: '', amount: '' }))
   );
   const [remarks, setRemarks] = useState('');
-  const [supervisorName, setSupervisorName] = useState(initialSupervisorName);
+  const [supervisorName, setSupervisorName] = useState('');
   const [supervisorPhone, setSupervisorPhone] = useState('');
   const [supervisorSignature, setSupervisorSignature] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -484,7 +484,7 @@ export default function OutsideWorkersStep3({
     }
 
     setRemarks(batch.remarks || '');
-    setSupervisorName(batch.supervisorName || initialSupervisorName);
+    setSupervisorName(batch.supervisorName || '');
     setSupervisorPhone(batch.supervisorPhone || '');
     setSupervisorSignature(batch.supervisorSignature || null);
     setSelectedTanks(batch.selectedTanks || []);
@@ -494,6 +494,7 @@ export default function OutsideWorkersStep3({
   }
 
   function handleAddNewBatch() {
+    if (isFormVisible && !editingBatchId) return;
     setEditingBatchId(null);
     setTableData(WORKER_ROWS.map((r) => ({ ...r, quantity: '', amount: '' })));
     setRemarks('');
@@ -736,15 +737,13 @@ export default function OutsideWorkersStep3({
                 </div>
               ))}
             </div>
-            {!isFormVisible && (
-              <button
-                type="button"
-                onClick={handleAddNewBatch}
-                className="w-full py-2.5 sm:py-3 mt-2 border-2 border-dashed border-emerald-400 text-emerald-700 text-sm font-bold rounded-[10px] hover:bg-emerald-50 transition"
-              >
-                + Add Another Batch
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleAddNewBatch}
+              className="w-full py-2.5 sm:py-3 mt-2 border-2 border-dashed border-emerald-400 text-emerald-700 text-sm font-bold rounded-[10px] hover:bg-emerald-50 transition"
+            >
+              + Add Another Batch
+            </button>
           </div>
         )}
 
@@ -752,7 +751,7 @@ export default function OutsideWorkersStep3({
           <div className="space-y-6 animate-fade-in">
             <div className="flex items-center justify-between border-b pb-2">
               <h4 className="font-extrabold text-lg text-primary">{editingBatchId ? '✏️ Edit Batch' : '➕ New Batch Entry'}</h4>
-              {editingBatchId && (
+              {(editingBatchId || savedBatches.length > 0) && (
                 <button
                   type="button"
                   onClick={handleCancelEdit}
@@ -780,18 +779,17 @@ export default function OutsideWorkersStep3({
                       key={`${tOpt.vehicleId}-${tOpt.tankId}-${idx}`}
                       type="button"
                       onClick={() => handleTankToggle(tOpt)}
-                      className="flex items-center justify-between p-3 border rounded-[10px] text-left transition"
-                      style={{
-                        borderColor: isSelected ? 'var(--color-primary)' : 'var(--color-border)',
-                        background: isSelected ? 'var(--color-primary-bg)' : 'var(--color-surface)'
-                      }}
+                      className={`flex items-center justify-between p-3 border rounded-[10px] text-left transition-colors duration-200 ${isSelected
+                          ? 'bg-blue-900 border-blue-950 text-white shadow-md'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
                     >
-                      <span className="text-xs font-bold" style={{ color: isSelected ? 'var(--color-primary)' : 'inherit' }}>
+                      <span className="text-xs font-bold">
                         {(!tOpt.vehicleNumber || tOpt.vehicleNumber === 'Unknown Vehicle' || tOpt.vehicleNumber === 'Unknown' || tOpt.vehicleNumber === 'N/A')
                           ? tOpt.tankName
                           : `${tOpt.vehicleNumber} - ${tOpt.tankName}`}
                       </span>
-                      {isSelected && <span className="text-primary font-bold">✓ Selected</span>}
+                      {isSelected && <span className="text-blue-100 font-extrabold text-[11px] uppercase tracking-wider">✓ Selected</span>}
                     </button>
                   );
                 })}
@@ -917,10 +915,20 @@ export default function OutsideWorkersStep3({
                 type="button"
                 onClick={handleSaveBatch}
                 disabled={submitting}
-                className="bg-slate-900 hover:bg-slate-800 text-white w-full text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow sm:shadow-lg rounded-[10px] sm:rounded-xl flex items-center justify-center gap-2 transition-colors"
+                className="bg-slate-900 hover:bg-slate-800 text-white w-full md:flex-1 text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow sm:shadow-lg rounded-[10px] sm:rounded-xl flex items-center justify-center gap-2 transition-colors"
               >
                 {submitting ? '⏳ Processing...' : (editingBatchId ? '💾 Update Batch' : '💾 Save Batch')}
               </button>
+              {(editingBatchId || savedBatches.length > 0) && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  disabled={submitting}
+                  className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 w-full md:w-auto px-6 text-sm sm:text-base py-2.5 sm:py-3.5 font-extrabold shadow-sm rounded-[10px] sm:rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
         )}

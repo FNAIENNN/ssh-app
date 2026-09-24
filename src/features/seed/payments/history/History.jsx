@@ -69,7 +69,7 @@ export default function History({ siteId }) {
         .from(TABLES.bills)
         .select('*')
         .eq('site_id', siteId)
-        .in('type', ['seed', 'seed_order', 'return', 'return_bill'])
+        .in('type', ['seed', 'seed_order'])
         .order('created_at', { ascending: false });
       setAllBills(data ?? []);
     } catch (err) {

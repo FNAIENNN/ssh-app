@@ -1466,7 +1466,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
                   <button
                     type="button"
                     onClick={() => validateAndProceed('outside-workers')}
-                    className="btn-primary w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
+                    className="bg-slate-900 hover:bg-slate-800 text-white rounded-[10px] transition-colors w-full text-base py-3.5 font-extrabold shadow-lg flex items-center justify-center gap-2 mt-6"
                   >
                     <span>Continue to Outside Workers</span>
                     <span>➔</span>

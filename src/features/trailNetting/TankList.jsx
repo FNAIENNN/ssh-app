@@ -570,9 +570,16 @@ function TankCardTN({ tank, cadence, cardData, onNet }) {
           <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
             {tank.sections?.name ? `Section ${tank.sections.name}` : 'Tank'}
           </span>
-          <h3 className="text-lg font-black text-slate-900 leading-tight">
-            Tank {tank.name}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-black text-slate-900 leading-tight">
+              Tank {tank.name}
+            </h3>
+            {cadence.day >= 45 && cadence.day <= 50 && (
+              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-extrabold uppercase tracking-wider">
+                Eligible
+              </span>
+            )}
+          </div>
         </div>
         <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${cadence.status === 'overdue'
           ? 'bg-red-50 text-red-700 border-red-200'

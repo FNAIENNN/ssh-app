@@ -54,6 +54,7 @@ export default function SeedVanPlanStep1({
   onContinue = null,
   onBack = null,
   onNewTankAdded = null,
+  onPlanUpdated = null,
   overrideTankQtys = null,
 }) {
   const vanPlanRef = useRef(null);
@@ -469,13 +470,13 @@ export default function SeedVanPlanStep1({
       const fileName = `${prefix}-${Date.now()}.${ext}`;
       const { data, error } = await supabase.storage.from('media').upload(fileName, blob, { contentType });
       if (error) {
-        console.warn('Storage media upload failed, fallback to dataUrl:', error.message || error);
-        return dataUrl;
+        console.warn('Storage media upload failed:', error.message || error);
+        return null;
       }
       return data?.path || fileName;
     } catch (err) {
-      console.warn('uploadMedia failed, fallback to dataUrl:', err.message || err);
-      return dataUrl;
+      console.warn('uploadMedia failed:', err.message || err);
+      return null;
     }
   };
 
@@ -613,13 +614,6 @@ export default function SeedVanPlanStep1({
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowAddNewTankModal(true)}
-          className="hidden sm:flex btn-primary text-xs font-extrabold px-3 py-2 items-center gap-1 shadow"
-        >
-          <span>+</span> Add New Tank
-        </button>
       </div>
 
       {/* Selected Vehicle Details */}

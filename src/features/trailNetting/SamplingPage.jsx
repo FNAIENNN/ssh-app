@@ -18,6 +18,7 @@ export default function SamplingPage() {
 
   const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const savingRef = useRef(false);
 
   const [tank, setTank] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -143,6 +144,7 @@ export default function SamplingPage() {
   };
 
   const handleProceed = async () => {
+    if (savingRef.current || saving) return;
     if (!latestCount || latestCount <= 0) {
       return toast.warning('Please enter valid KGs and Pieces Count, then select a row.');
     }
@@ -152,6 +154,7 @@ export default function SamplingPage() {
       return toast.warning('Uploading at least one photo is mandatory before proceeding.');
     }
 
+    savingRef.current = true;
     setSaving(true);
     // NEW: Upload photos to Supabase Storage before saving
     const uploadedPhotos = [];
@@ -168,18 +171,31 @@ export default function SamplingPage() {
           if (error) {
             console.error('Photo upload failed:', error);
             setSaving(false);
+            savingRef.current = false;
             return toast.error(`Failed to upload photo ${p.name}: ${error.message}`);
           }
 
           if (data?.path) {
             const { data: urlData } = supabase.storage.from('media').getPublicUrl(data.path);
-            uploadedPhotos.push(urlData?.publicUrl || data.path);
+            let finalUrl = urlData?.publicUrl || data.path;
+
+            // If using the local demo client (returns '#'), convert the file to a base64 data URI so it can persist and render.
+            if (finalUrl === '#') {
+              finalUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(p.file);
+              });
+            }
+
+            uploadedPhotos.push(finalUrl);
           } else {
             uploadedPhotos.push(fileName);
           }
         } catch (uploadErr) {
           console.error('Photo upload exception:', uploadErr);
           setSaving(false);
+          savingRef.current = false;
           return toast.error(`Failed to upload photo ${p.name}`);
         }
       }
@@ -226,10 +242,11 @@ export default function SamplingPage() {
     };
 
     // 1) Save Trail Netting Record with Disease, Remarks & Photos info
+    const recordDateStr = today.toISOString().slice(0, 10);
     const recordPayload = {
       tank_id: tankId,
       site_id: siteId,
-      date: today.toISOString().slice(0, 10),
+      date: recordDateStr,
       samples: computedRows.map((r) => ({
         no_of_kgs: Number(r.kgs) || 0,
         pieces_count: Number(r.pieces) || 0,
@@ -246,12 +263,25 @@ export default function SamplingPage() {
       created_by: user?.id,
     };
 
-    const { error: recErr } = await supabase
-      .from(TABLES.trailNettingRecords)
-      .insert(recordPayload);
+    const existingRecord = records.find((r) => r.date === recordDateStr);
+    let recErr = null;
+
+    if (existingRecord) {
+      const { error } = await supabase
+        .from(TABLES.trailNettingRecords)
+        .update(recordPayload)
+        .eq('id', existingRecord.id);
+      recErr = error;
+    } else {
+      const { error } = await supabase
+        .from(TABLES.trailNettingRecords)
+        .insert(recordPayload);
+      recErr = error;
+    }
 
     if (recErr) {
       setSaving(false);
+      savingRef.current = false;
       return toast.error(recErr.message);
     }
 
@@ -303,6 +333,7 @@ export default function SamplingPage() {
       .upsert(reportPayload, { onConflict: 'tank_id,latest_date' });
 
     setSaving(false);
+    savingRef.current = false;
     toast.success('Sampling data saved!');
     navigate(`/app/trail-netting/${tankId}/reports`);
   };

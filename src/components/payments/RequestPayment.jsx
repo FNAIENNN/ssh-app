@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase, TABLES } from '../../lib/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../../hooks/useToast';
 import LedgerTable, { StatusChip } from './LedgerTable';
+import { uploadPaymentEvidence } from './mediaEvidence';
 
 /**
  * RequestPayment — the shared payment pattern used everywhere a payment
@@ -57,6 +58,11 @@ export default function RequestPayment({
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [selectedBankId, setSelectedBankId] = useState(null);
   const [bankForm, setBankForm] = useState({ ifsc: '', accountNumber: '', bankName: '', holderName: '' });
+  const [bankPhoto, setBankPhoto] = useState(null);
+  const [bankPhotoStatus, setBankPhotoStatus] = useState('idle');
+  const [uploadedBankPhotoPath, setUploadedBankPhotoPath] = useState(null);
+  const [bankVoice, setBankVoice] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [advanceTxns, setAdvanceTxns] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [banks, setBanks] = useState([]);
@@ -144,8 +150,23 @@ export default function RequestPayment({
     }
     return { kind: 'success', text: `Valid. Balance after request: ₹${Math.max(0, currentRemainingBalance - advAmount).toLocaleString('en-IN')}` };
   }, [advanceAmount, advAmount, currentRemainingBalance, originalTotal]);
-
   // ── Actions ───────────────────────────────────────────────────────────
+  const handleSaveBankPhoto = async () => {
+    setBankPhotoStatus('uploading');
+    try {
+      const path = await uploadPaymentEvidence(supabase.storage, bankPhoto, 'bank-photo');
+      if (path) {
+        setUploadedBankPhotoPath(path);
+        setBankPhotoStatus('saved');
+      } else {
+        throw new Error('Upload returned empty path');
+      }
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      toast.error('Photo upload failed: ' + (err.message || 'Unknown error'));
+      setBankPhotoStatus('failed');
+    }
+  };
   async function proceedCash() {
     if (amount <= 0 || (originalTotal > 0 && amount > currentRemainingBalance)) {
       toast.error('Fix the cash amount before proceeding');
@@ -293,7 +314,7 @@ export default function RequestPayment({
     }
     let paymentAccountId = null;
     let bankAccountId = null;
-    let paymentMethodDetails = null; // Declare here so we can populate it
+    let paymentMethodDetails = null;
 
     if (advanceMode === 'upi') {
       if (!upiIdInput.trim()) return toast.error('Enter a UPI ID');
@@ -304,6 +325,11 @@ export default function RequestPayment({
         if (!bankForm.ifsc || !bankForm.accountNumber || !bankForm.bankName) {
           return toast.error('Fill bank details or pick a saved account');
         }
+      } else if (entryMethod === 'photo') {
+        if (!bankPhoto) return toast.error('Please upload a bank screenshot');
+        if (bankPhotoStatus !== 'saved' || !uploadedBankPhotoPath) return toast.error('Please click "Save Photo" before submitting');
+      } else if (entryMethod === 'voice') {
+        if (!bankVoice) return toast.error('Please record bank details');
       } else if (!selectedBankId) {
         return toast.error('Pick a saved bank account or enter manually');
       }
@@ -318,6 +344,26 @@ export default function RequestPayment({
       const bank = await getOrSaveRecipientBank();
       if (!bank) return;
       finalBankAccountId = bank.id;
+    }
+
+    setIsUploading(true);
+    let uploadedPhotoUrl = null;
+    let uploadedVoiceUrl = null;
+
+    try {
+      if (advanceMode === 'bank') {
+        if (entryMethod === 'photo' && bankPhoto) {
+          if (bankPhotoStatus !== 'saved' || !uploadedBankPhotoPath) throw new Error('Photo not saved');
+          uploadedPhotoUrl = uploadedBankPhotoPath;
+        } else if (entryMethod === 'voice' && bankVoice) {
+          uploadedVoiceUrl = await uploadPaymentEvidence(supabase.storage, bankVoice, 'bank-voice');
+          if (!uploadedVoiceUrl) throw new Error('Voice upload returned no object path');
+        }
+      }
+    } catch (error) {
+      console.warn('Payment evidence upload failed:', error?.message || error);
+      setIsUploading(false);
+      return toast.error(`Failed to upload ${entryMethod === 'voice' ? 'voice recording' : 'photo'}. Please try again.`);
     }
 
     const isValidUuid = typeof user?.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
@@ -337,6 +383,8 @@ export default function RequestPayment({
       ...(isValidUuid ? { created_by: user.id } : {}),
       payment_method_details: {
         ...(paymentMethodDetails || {}),
+        ...(uploadedPhotoUrl ? { photo: uploadedPhotoUrl, entry_method: 'photo' } : {}),
+        ...(uploadedVoiceUrl ? { voice: uploadedVoiceUrl, entry_method: 'voice' } : {}),
         ...(batchId ? { batch_id: batchId } : {})
       },
     };
@@ -353,6 +401,11 @@ export default function RequestPayment({
     }
     setAdvanceTxns((prev) => [data, ...prev]);
     setAdvanceAmount('');
+    setBankPhoto(null);
+    setBankPhotoStatus('idle');
+    setUploadedBankPhotoPath(null);
+    setBankVoice(null);
+    setIsUploading(false);
     toast.success('Request submitted for approval');
     onPaid?.(data);
   }
@@ -540,16 +593,27 @@ export default function RequestPayment({
                 setForm={setBankForm}
                 onAddBank={handleSaveRecipientBank}
                 addBankLabel={type === 'outside_worker' ? 'Add Bank to Supplier' : 'Add Bank to Hatchery'}
+                bankPhoto={bankPhoto}
+                setBankPhoto={(file) => {
+                  setBankPhoto(file);
+                  setBankPhotoStatus('idle');
+                  setUploadedBankPhotoPath(null);
+                }}
+                bankPhotoStatus={bankPhotoStatus}
+                onSaveBankPhoto={handleSaveBankPhoto}
+                bankVoice={bankVoice}
+                setBankVoice={setBankVoice}
               />
             )}
 
             <button
               type="button"
               onClick={submitAdvance}
+              disabled={isUploading}
               className="btn w-full text-white shadow-sm font-bold"
-              style={{ background: 'var(--color-success)' }}
+              style={{ background: 'var(--color-success)', opacity: isUploading ? 0.7 : 1 }}
             >
-              Submit Request
+              {isUploading ? 'Uploading...' : 'Submit Request'}
             </button>
           </div>
 
@@ -713,7 +777,13 @@ function UpiAccountPicker({ accounts, selectedId, onSelect }) {
   );
 }
 
-function BankDetails({ entryMethod, setEntryMethod, form, setForm, onAddBank, addBankLabel }) {
+function BankDetails({ entryMethod, setEntryMethod, form, setForm, onAddBank, addBankLabel, bankPhoto, setBankPhoto, bankPhotoStatus, onSaveBankPhoto, bankVoice, setBankVoice }) {
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) setBankPhoto(file);
+  };
+  const photoPreviewUrl = useObjectUrl(bankPhoto);
+
   return (
     <div className="space-y-3">
       <p className="text-[13px] font-semibold text-text-secondary">Select Entry Method</p>
@@ -782,14 +852,50 @@ function BankDetails({ entryMethod, setEntryMethod, form, setForm, onAddBank, ad
         </div>
       )}
       {entryMethod === 'photo' && (
-        <div className="rounded-[10px] px-3 py-3 flex items-center gap-2" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>
-          📷 <span>Upload bank screenshot</span>
+        <div className="space-y-2">
+          {bankPhoto ? (
+            <div className="space-y-2">
+              <img src={photoPreviewUrl || bankPhoto} alt="Bank Details" className="w-full max-h-48 object-contain bg-slate-900 rounded-[12px] border shadow-inner" style={{ borderColor: 'var(--color-border)' }} />
+
+              {bankPhotoStatus === 'saved' ? (
+                <div className="p-2 text-center text-emerald-700 bg-emerald-50 rounded-[12px] font-bold text-xs border border-emerald-200">
+                  Photo Saved ✓
+                </div>
+              ) : bankPhotoStatus === 'failed' ? (
+                <div className="p-2 text-center text-rose-700 bg-rose-50 rounded-[12px] font-bold text-xs border border-rose-200">
+                  Photo upload failed. Please try again.
+                </div>
+              ) : null}
+
+              <div className="flex gap-2">
+                {bankPhotoStatus !== 'saved' && (
+                  <button
+                    type="button"
+                    onClick={onSaveBankPhoto}
+                    disabled={bankPhotoStatus === 'uploading'}
+                    className="flex-1 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition"
+                  >
+                    {bankPhotoStatus === 'uploading' ? '⏳ Uploading...' : '💾 Save Photo'}
+                  </button>
+                )}
+                <label className="flex-1 py-2 text-xs font-bold text-white bg-slate-500 hover:bg-slate-600 rounded-lg text-center cursor-pointer transition">
+                  Retake
+                  <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+                </label>
+                <button type="button" onClick={() => setBankPhoto(null)} className="flex-1 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition">Delete</button>
+              </div>
+            </div>
+          ) : (
+            <label className="flex-1 p-3 flex items-center justify-center gap-2 rounded-[12px] bg-blue-900 text-white hover:bg-blue-800 transition cursor-pointer shadow-sm">
+              <span className="text-xl">📷</span>
+              <span className="font-bold text-xs">Upload Bank Screenshot</span>
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+            </label>
+          )}
         </div>
       )}
       {entryMethod === 'voice' && (
-        <div className="rounded-[10px] px-3 py-3 flex items-center gap-2" style={{ background: 'var(--color-info-bg)', color: 'var(--color-info)' }}>
-          🎙️ <span>Record bank details by voice</span>
-        </div>
+        <VoiceRecorder bankVoice={bankVoice} setBankVoice={setBankVoice} />
       )}
       {entryMethod && (
         <div className="rounded-[10px] px-3 py-2.5 flex items-center gap-2" style={{ background: 'var(--color-success-bg)', border: '1px solid var(--color-success)' }}>
@@ -799,6 +905,89 @@ function BankDetails({ entryMethod, setEntryMethod, form, setForm, onAddBank, ad
       )}
     </div>
   );
+}
+
+function VoiceRecorder({ bankVoice, setBankVoice }) {
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const audioPreviewUrl = useObjectUrl(bankVoice);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredTypes = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      const mimeType = preferredTypes.find((type) => MediaRecorder.isTypeSupported?.(type));
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const recordedType = mediaRecorder.mimeType || audioChunksRef.current[0]?.type || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: recordedType });
+        setBankVoice(audioBlob);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.warn('Microphone access denied or error:', error);
+      alert('Please allow microphone access to record voice.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      setIsRecording(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {bankVoice ? (
+        <div className="space-y-2">
+          <audio src={audioPreviewUrl || bankVoice} controls preload="metadata" className="w-full" />
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setBankVoice(null)} className="flex-1 py-2 text-xs font-bold text-white bg-slate-500 hover:bg-slate-600 rounded-lg transition">Delete & Re-record</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-center p-3 rounded-[12px] border-2 border-dashed border-slate-300">
+          {isRecording ? (
+            <button type="button" onClick={stopRecording} className="flex items-center gap-2 py-2 px-4 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm animate-pulse transition">
+              <span className="text-xl">⏹️</span> Stop Recording
+            </button>
+          ) : (
+            <button type="button" onClick={startRecording} className="flex items-center gap-2 py-2 px-4 text-xs font-bold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm transition">
+              <span className="text-xl">🎙️</span> Start Recording
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useObjectUrl(value) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    if (!(value instanceof Blob)) {
+      setUrl(null);
+      return undefined;
+    }
+    const nextUrl = URL.createObjectURL(value);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [value]);
+  return url;
 }
 
 function ProofPreview({ label }) {

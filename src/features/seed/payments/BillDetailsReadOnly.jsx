@@ -20,6 +20,7 @@ import ActivityTimeline from '../../../components/ui/ActivityTimeline';
 import { aggregateTankStates } from './seedStocking/stockingUtils';
 import { supabase, TABLES } from '../../../lib/supabaseClient';
 import { useToast } from '../../../hooks/useToast';
+import { resolvePaymentEvidenceUrl } from '../../../components/payments/mediaEvidence';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,6 +78,37 @@ function StatusPill({ status }) {
 
 function EmptyNote({ text }) {
   return <p className="text-xs text-text-muted italic">{text}</p>;
+}
+
+function PaymentEvidence({ value, kind, onOpenImage, className }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setUrl(null);
+    setFailed(false);
+    resolvePaymentEvidenceUrl(supabase.storage, value)
+      .then((resolved) => {
+        if (!active) return;
+        setUrl(resolved);
+        setFailed(!resolved);
+      })
+      .catch(() => active && setFailed(true));
+    return () => { active = false; };
+  }, [value]);
+
+  if (failed) return <span className="text-[10px] text-red-600 font-semibold">Evidence unavailable</span>;
+  if (!url) return <span className="text-[10px] text-text-muted">Loading…</span>;
+  if (kind === 'audio') {
+    return <audio src={url} controls preload="metadata" className={className} />;
+  }
+  return (
+    <button type="button" onClick={(event) => { event.preventDefault(); onOpenImage(url); }} className={className}>
+      <span className="text-sm">📷</span>
+      <span className="text-[11px] font-bold whitespace-nowrap">View Photo</span>
+    </button>
+  );
 }
 
 // ── Drum allocation helper — supports both old row format and new drums[] format ──
@@ -313,6 +345,7 @@ export default function BillDetailsReadOnly({
   const [siteName, setSiteName] = useState('—');
   const [returnVehicle, setReturnVehicle] = useState(null);
   const [returnBills, setReturnBills] = useState([]);
+  const [previewImage, setPreviewImage] = useState(null);
 
   const [financeStatus, setFinanceStatus] = useState(bill?.finance_status || 'pending');
   const [refundBankAccount, setRefundBankAccount] = useState(bill?.refund_bank_account_id || '');
@@ -381,8 +414,8 @@ export default function BillDetailsReadOnly({
   if (!bill) return null;
 
   // ── Data extraction ───────────────────────────────────────────────────────
-  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle');
-  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle');
+  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle' && p.type?.toLowerCase() !== 'outside_worker' && p.type?.toLowerCase() !== 'outside worker');
+  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle' && p.type?.toLowerCase() !== 'outside_worker' && p.type?.toLowerCase() !== 'outside worker');
   const vanPlan = bill.van_plan;
   const stockingData = bill.stocking_status_data;
   const workersData = bill.outside_workers_data;
@@ -970,6 +1003,7 @@ export default function BillDetailsReadOnly({
                     <th className="p-2 font-bold">Remaining</th>
                     <th className="p-2 font-bold">Status</th>
                     <th className="p-2 font-bold">Details</th>
+                    <th className="p-2 font-bold">Evidence</th>
                     <th className="p-2 font-bold">Date & Time</th>
                   </tr>
                 </thead>
@@ -983,6 +1017,19 @@ export default function BillDetailsReadOnly({
                       <td className="p-2">{p.remaining_balance != null ? `₹${Number(p.remaining_balance).toLocaleString('en-IN')}` : '—'}</td>
                       <td className="p-2 capitalize font-semibold">{p.status || 'requested'}</td>
                       <td className="p-2 text-text-muted">{p.upi_id || p.account_number || '—'}</td>
+                      <td className="p-2">
+                        <div className="flex gap-2 items-center">
+                          {p.payment_method_details?.photo && (
+                            <PaymentEvidence value={p.payment_method_details.photo} kind="image" onOpenImage={setPreviewImage} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900 text-white rounded-[8px] hover:bg-blue-800 transition shadow-sm cursor-pointer" />
+                          )}
+                          {p.payment_method_details?.voice && (
+                            <PaymentEvidence value={p.payment_method_details.voice} kind="audio" className="h-8 max-w-[160px] rounded-full border border-slate-300 shadow-sm" />
+                          )}
+                          {!p.payment_method_details?.photo && !p.payment_method_details?.voice && (
+                            <span className="text-text-muted italic">—</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2 text-text-muted">{p.created_at ? new Date(p.created_at).toLocaleString('en-IN') : '—'}</td>
                     </tr>
                   ))}
@@ -1361,7 +1408,13 @@ export default function BillDetailsReadOnly({
                           <span className="text-[10px] uppercase font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{p.method}</span>
                           {p.upi_id && <span className="text-[10px] font-mono font-bold text-slate-500">{p.upi_id}</span>}
                           {p.bank_account_id && <span className="text-[10px] font-mono font-bold text-slate-500">Bank Transfer</span>}
-                          <span className="text-xs font-black text-emerald-600">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
+                          {p.payment_method_details?.photo && (
+                            <PaymentEvidence value={p.payment_method_details.photo} kind="image" onOpenImage={setPreviewImage} className="flex items-center gap-1.5 px-2 py-1 bg-blue-900 text-white rounded-[8px] hover:bg-blue-800 transition shadow-sm cursor-pointer" />
+                          )}
+                          {p.payment_method_details?.voice && (
+                            <PaymentEvidence value={p.payment_method_details.voice} kind="audio" className="h-7 max-w-[140px] rounded-full border border-slate-300 shadow-sm" />
+                          )}
+                          <span className="text-xs font-black text-emerald-600 ml-1">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
                         </div>
                       </div>
                     ))}
@@ -1456,6 +1509,20 @@ export default function BillDetailsReadOnly({
         {/* ── 8. Activity Timeline ── */}
         <ActivityTimeline timeline={bill.timeline} />
       </div>
+      {/* Photo Preview Modal */}
+      {previewImage && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.85)' }} onClick={() => setPreviewImage(null)}>
+          <div className="relative max-w-4xl w-full max-h-[90vh] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b border-white/10 bg-black/40">
+              <h3 className="text-white font-bold text-sm">Bank Screenshot</h3>
+              <button type="button" onClick={() => setPreviewImage(null)} className="text-white hover:text-red-400 font-bold px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg transition text-xs">Close</button>
+            </div>
+            <div className="p-4 overflow-auto flex justify-center items-center h-full bg-slate-900/50 min-h-[300px]">
+              <img src={previewImage} alt="Preview" className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
