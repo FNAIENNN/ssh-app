@@ -600,10 +600,13 @@ function HistoryTankCardTN({ tank, report, recordsList, onViewReport }) {
       {/* Completed netting details follow the Harvest card label/value pattern. */}
       <div className="space-y-1.5 text-xs text-slate-600 flex-1">
         <CardRow label="DOC / Number of Days" value={`Day ${docVal}`} />
-        <CardRow label="Netting Count" value={tankRecords.length || 1} />
+        <CardRow label="Seed Quantity" value={tank.quantity ? `${Number(tank.quantity).toLocaleString('en-IN')} PL` : '—'} />
         <CardRow label="Completed Count" value={latestCountVal !== '—' ? `${latestCountVal} Count/KG` : '—'} />
-        <CardRow label="Netting Date" value={latestCountDate} />
         <CardRow label="Hatchery" value={tank.hatchery || '—'} />
+        <CardRow label="Feed" value={tank.feed != null ? `${Number(tank.feed).toLocaleString('en-IN')} KG` : '—'} />
+        <CardRow label="Area" value={tank.area ? `${tank.area} Acres` : '—'} />
+        <CardRow label="Netting Date" value={latestCountDate} />
+        <CardRow label="Netting Count" value={tankRecords.length || 1} />
       </div>
 
       {/* Bottom action retains the existing report callback. */}
@@ -673,8 +676,10 @@ function TankCardTN({ tank, cadence, cardData, middleHarvest, onNet }) {
       <div className="space-y-1.5 text-xs text-slate-600 flex-1">
         <CardRow label="DOC / Number of Days" value={`Day ${cadence.day}`} />
         <CardRow label="Seed Quantity" value={cardData.quantity ? `${Number(cardData.quantity).toLocaleString('en-IN')} PL` : '—'} />
-        <CardRow label="Feed" value={cardData.feed != null ? `${Number(cardData.feed).toLocaleString('en-IN')} KG` : '—'} />
         <CardRow label="Latest Count" value={cardData.latestCount != null ? `${cardData.latestCount} Count/KG` : '—'} />
+        <CardRow label="Hatchery" value={cardData.hatchery} />
+        <CardRow label="Feed" value={cardData.feed != null ? `${Number(cardData.feed).toLocaleString('en-IN')} KG` : '—'} />
+        <CardRow label="Area" value={tank.area ? `${tank.area} Acres` : '—'} />
         <CardRow label="Latest Count Date" value={formatDate(cardData.latestCountDate)} />
         {middleHarvest && (
           <>
@@ -682,7 +687,6 @@ function TankCardTN({ tank, cadence, cardData, middleHarvest, onNet }) {
             <CardRow label="Middle Harvest Count" value={`${middleHarvest.final_count} Count/KG`} />
           </>
         )}
-        <CardRow label="Hatchery" value={cardData.hatchery} />
         <CardRow label="Netting Count" value={cardData.nettingCount} />
       </div>
 

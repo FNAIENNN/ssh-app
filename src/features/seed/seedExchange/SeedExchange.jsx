@@ -669,6 +669,14 @@ export default function SeedExchange() {
     );
   };
 
+  const handleToggleAllChecklist = (checked) => {
+    setChecklistItems((prev) =>
+      prev.map((item) =>
+        item.stage === checklistStage ? { ...item, checked } : item
+      )
+    );
+  };
+
   const handleAddChecklistPoint = () => {
     if (!newChecklistText.trim()) return;
     setChecklistItems((prev) => [
@@ -1309,13 +1317,15 @@ export default function SeedExchange() {
                     </div>
 
                     <div>
-                      <label className="text-xs font-extrabold text-slate-700 block mb-1">g. DOC of From Tank (Auto)</label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={fromTankDoc ? `${fromTankDoc} Days` : 'Auto-filled'}
-                        className="w-full bg-slate-100 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 cursor-not-allowed"
-                      />
+                      <label className="text-xs font-extrabold text-slate-700 block mb-1">g. To Tank DOC</label>
+                      <select
+                        value={selectedDocPreference}
+                        onChange={(e) => setSelectedDocPreference(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white"
+                      >
+                        <option value="from">From Tank DOC ({fromTankDoc} Days)</option>
+                        <option value="to">To Tank DOC ({toTankDoc} Days)</option>
+                      </select>
                     </div>
 
                     <div>
@@ -1360,14 +1370,6 @@ export default function SeedExchange() {
               {dataEntryStep === 'checklist' && (
                 <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-card space-y-4 sm:space-y-6">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                    <div>
-                      <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-                        <span>📋</span> Seed Exchange Safety Checklist
-                      </h3>
-                      <p className="text-xs text-slate-500">Check safety points before entering seed exchange weights.</p>
-                    </div>
-
-                    {/* Requirement 4: Stage Selector Dropdown with 2 options (no numbers) */}
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-extrabold text-slate-700">Stage:</span>
                       <select
@@ -1381,7 +1383,43 @@ export default function SeedExchange() {
                     </div>
                   </div>
 
-                  {/* Add New Checklist Point */}
+                  <div
+                    className="rounded-2xl p-5 border flex items-center justify-between gap-4"
+                    style={{
+                      background: isChecklistValid ? 'var(--color-success-bg)' : 'var(--color-warning-bg)',
+                      borderColor: isChecklistValid ? 'var(--color-success)' : 'var(--color-warning)',
+                    }}
+                  >
+                    <div>
+                      <h3
+                        className="text-base font-extrabold flex items-center gap-2"
+                        style={{ color: isChecklistValid ? 'var(--color-success)' : 'var(--color-warning)' }}
+                      >
+                        <span>{isChecklistValid ? '✅ Seed Exchange Checklist Complete' : '⚠️ Seed Exchange Safety Checklist'}</span>
+                      </h3>
+                      <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                        All {visibleChecklistItems.length} safety and operational items must be verified before proceeding.
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <span
+                        className="text-2xl font-black font-mono block"
+                        style={{ color: isChecklistValid ? 'var(--color-success)' : 'var(--color-warning)' }}
+                      >
+                        {visibleChecklistItems.filter(i => i.checked).length} / {visibleChecklistItems.length}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleAllChecklist(!isChecklistValid)}
+                        className="text-[11px] font-bold underline mt-0.5 hover:opacity-80"
+                        style={{ color: 'var(--color-text-primary)' }}
+                      >
+                        {isChecklistValid ? 'Uncheck All' : 'Check All'}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -1399,64 +1437,66 @@ export default function SeedExchange() {
                     </button>
                   </div>
 
-                  {/* Requirement 4: Aesthetic Checklist Items Layout & Default Unchecked State */}
-                  <div className="space-y-2.5">
-                    {visibleChecklistItems.map((item) => (
-                      <div
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {visibleChecklistItems.map((item, idx) => (
+                      <label
                         key={item.id}
-                        className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${item.checked
-                            ? 'bg-emerald-50/70 border-emerald-300 shadow-sm'
-                            : 'bg-slate-50/70 border-slate-200 hover:border-slate-300 hover:bg-slate-100/50'
-                          }`}
+                        className="rounded-xl p-3.5 border transition flex items-start gap-3"
+                        style={{
+                          background: item.checked ? 'var(--color-success-bg)' : 'var(--color-surface-card)',
+                          borderColor: item.checked ? 'var(--color-success)' : 'var(--color-border)',
+                          boxShadow: 'var(--shadow-card)',
+                        }}
                       >
-                        <label className="flex items-center gap-3.5 cursor-pointer flex-1 mr-4 select-none">
-                          <input
-                            type="checkbox"
-                            checked={item.checked}
-                            onChange={() => handleToggleChecklist(item.id)}
-                            className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 accent-emerald-600 cursor-pointer"
-                          />
+                        <input
+                          type="checkbox"
+                          checked={item.checked}
+                          onChange={() => handleToggleChecklist(item.id)}
+                          className="w-5 h-5 mt-0.5 cursor-pointer accent-emerald-600"
+                        />
+                        <div className="flex-1 min-w-0">
                           {editingChecklistId === item.id ? (
-                            <input
-                              type="text"
-                              value={editingChecklistText}
-                              onChange={(e) => setEditingChecklistText(e.target.value)}
-                              className="flex-1 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editingChecklistText}
+                                onChange={(e) => setEditingChecklistText(e.target.value)}
+                                className="flex-1 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSaveEditChecklist}
+                                className="text-[11px] font-extrabold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-2 py-1 rounded-lg border border-emerald-300"
+                              >
+                                Save
+                              </button>
+                            </div>
                           ) : (
-                            <span className={`text-xs font-bold transition-all ${item.checked ? 'text-emerald-900 font-extrabold' : 'text-slate-700'}`}>
-                              {item.text}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold block" style={{ color: 'var(--color-text-primary)' }}>
+                                {idx + 1}. {item.text}
+                              </span>
+                              <div className="flex gap-2 mt-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); handleStartEditChecklist(item); }}
+                                  className="text-[10px] font-bold text-blue-600 hover:underline"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.preventDefault(); handleDeleteChecklistPoint(item.id); }}
+                                  className="text-[10px] font-bold text-rose-600 hover:underline"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
                           )}
-                        </label>
-
-                        <div className="flex items-center gap-2">
-                          {editingChecklistId === item.id ? (
-                            <button
-                              type="button"
-                              onClick={handleSaveEditChecklist}
-                              className="text-[11px] font-extrabold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1 rounded-lg border border-emerald-300"
-                            >
-                              Save
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditChecklist(item)}
-                              className="text-[11px] font-extrabold text-blue-600 hover:text-blue-800 px-2 py-1 rounded-lg hover:bg-blue-50"
-                            >
-                              Edit ✏️
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteChecklistPoint(item.id)}
-                            className="text-[11px] font-extrabold text-rose-600 hover:text-rose-800 px-2 py-1 rounded-lg hover:bg-rose-50"
-                          >
-                            Delete 🗑️
-                          </button>
                         </div>
-                      </div>
+                        <span className="text-sm">{item.checked ? '✅' : '⏳'}</span>
+                      </label>
                     ))}
                   </div>
 
