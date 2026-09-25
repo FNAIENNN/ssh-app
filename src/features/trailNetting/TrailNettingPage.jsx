@@ -58,7 +58,7 @@ export default function TrailNettingPage() {
     })();
   }, [tankId]);
 
-  const cadence = computeCadence({ startDate: tank?.start_date, records });
+  const cadence = computeCadence({ startDate: tank?.doc_reference_date || tank?.start_date, records });
   const allChecked = CHECKLIST.every((c) => checks[c.key]);
 
   const finalCount = rows.reduce((sum, r) => sum + (Number(r.count) || 0), 0);

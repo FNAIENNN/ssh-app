@@ -667,13 +667,6 @@ export default function CentralPayments() {
   if (selectedBillModal) {
     return (
       <div className="max-w-6xl mx-auto p-4 space-y-4">
-        <button
-          type="button"
-          onClick={() => setSelectedBillModal(null)}
-          className="btn-primary text-xs px-4 py-2 font-bold flex items-center gap-1"
-        >
-          ← Back to Payments
-        </button>
         <BillDetailsReadOnly
           bill={selectedBillModal}
           onBack={() => setSelectedBillModal(null)}

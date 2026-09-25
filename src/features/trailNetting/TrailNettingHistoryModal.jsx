@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { formatDate } from '../../hooks/useTrailNettingCadence';
 import { downloadPDF } from '../../lib/pdfGenerator';
 import { useToast } from '../../hooks/useToast';
-import { supabase } from '../../lib/supabaseClient';
-import { resolvePaymentEvidenceUrl } from '../../components/payments/mediaEvidence';
 
 function fmt(val) {
     if (val == null || val === '') return '—';
@@ -27,89 +25,26 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
     const modalContentRef = useRef(null);
     const toast = useToast();
     const [downloading, setDownloading] = useState(false);
-    const [resolvedPhotos, setResolvedPhotos] = useState([]);
-    const [resolvingPhotos, setResolvingPhotos] = useState(false);
+    const [selectedRecord, setSelectedRecord] = useState(null);
 
-    const latestRec = recordsList.length > 0 ? recordsList[recordsList.length - 1] : null;
+    if (!isOpen || (!tank && !report)) return null;
 
-    // Safely parse process_details if they are stored as JSON strings
-    const parseDetails = (data) => {
-        if (!data) return {};
-        if (typeof data === 'string') {
-            try { return JSON.parse(data); } catch { return {}; }
-        }
-        return data;
-    };
-
-    const pDetails = parseDetails(report?.process_details) || parseDetails(latestRec?.process_details) || {};
-    const lrDetails = parseDetails(latestRec?.process_details) || {};
-
-    const tankName = tank?.name || pDetails?.tank_name || report?.tank_name || `Tank ${report?.tank_id || ''}`;
-    const sectionName = tank?.sections?.name || pDetails?.section_name || '—';
-    const hatchery = tank?.hatchery || pDetails?.hatchery || report?.hatchery || '—';
-    const seedType = tank?.seed_type || pDetails?.seed_type || '—';
-    const seedStocked = tank?.quantity || pDetails?.quantity || report?.seed_stocked || 0;
-    const startDate = tank?.start_date || pDetails?.start_date || '—';
-    const doc = report?.doc || pDetails?.doc || '—';
-    const nettingDate = report?.latest_date ? formatDate(report.latest_date) : (latestRec?.date ? formatDate(latestRec.date) : '—');
-    const latestCount = report?.latest_count || latestRec?.final_count || pDetails?.latest_count || '—';
-
-    // Checklist — use only real saved data, no demo defaults
-    const checklist = pDetails?.checklist || null;
-
-    // Samples — use only real saved data
-    const samples = pDetails?.samples || latestRec?.samples || lrDetails?.samples || [];
-
-    // Diseases & Remarks
-    const diseases = pDetails?.diseases || latestRec?.diseases || lrDetails?.diseases || [];
-    const remarks = pDetails?.remarks || latestRec?.remarks || lrDetails?.remarks || '';
-
-    // Photos
-    const rawPhotos = pDetails?.photos || latestRec?.photos || lrDetails?.photos || [];
-
-    useEffect(() => {
-        if (!isOpen || rawPhotos.length === 0) {
-            setResolvedPhotos([]);
-            return;
-        }
-
-        let isMounted = true;
-        setResolvingPhotos(true);
-
-        const resolveAll = async () => {
-            try {
-                const resolved = await Promise.all(
-                    rawPhotos.map(async (p) => {
-                        if (!p) return null;
-                        if (typeof p === 'string' && (p.startsWith('data:') || p.startsWith('blob:'))) {
-                            return p;
-                        }
-                        const resolvedUrl = await resolvePaymentEvidenceUrl(supabase.storage, p, 7200);
-                        return resolvedUrl || p;
-                    })
-                );
-                if (isMounted) setResolvedPhotos(resolved.filter(Boolean));
-            } catch (err) {
-                console.error("Error resolving photos:", err);
-                if (isMounted) setResolvedPhotos(rawPhotos); // fallback
-            } finally {
-                if (isMounted) setResolvingPhotos(false);
-            }
-        };
-        resolveAll();
-        return () => { isMounted = false; };
-    }, [isOpen, rawPhotos]);
+    const tankName = tank?.name || report?.tank_name || `Tank ${report?.tank_id || ''}`;
+    const sectionName = tank?.sections?.name || '—';
+    const hatchery = tank?.hatchery || report?.hatchery || '—';
+    const seedStocked = tank?.quantity || report?.seed_stocked || 0;
+    const startDate = tank?.start_date || tank?.doc_reference_date || '—';
 
     const handleDownloadPDF = async () => {
         if (!modalContentRef.current) return;
         try {
             setDownloading(true);
             await downloadPDF(modalContentRef.current, {
-                filename: `Trail_Netting_Report_${tankName}_${new Date().toISOString().slice(0, 10)}.pdf`,
+                filename: `Trail_Netting_Activity_${tankName}_${new Date().toISOString().slice(0, 10)}.pdf`,
                 orientation: 'portrait',
                 format: 'a4',
             });
-            toast.success('Report PDF downloaded successfully!');
+            toast.success('Activity PDF downloaded successfully!');
         } catch (err) {
             console.error('Download PDF error:', err);
             toast.error('Failed to download PDF');
@@ -118,73 +53,222 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
         }
     };
 
-    if (!isOpen || (!tank && !report)) return null;
+    const handleClose = () => {
+        if (selectedRecord) {
+            setSelectedRecord(null);
+        } else {
+            onClose();
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-            <div ref={modalContentRef} className="bg-white rounded-3xl max-w-4xl w-full p-6 md:p-8 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto scroll-thin">
+            <div ref={modalContentRef} className="bg-slate-50 rounded-3xl max-w-5xl w-full p-6 md:p-8 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto scroll-thin">
 
                 {/* Header */}
-                <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                <div className="flex items-start justify-between border-b border-slate-200 pb-4 bg-white p-5 rounded-2xl shadow-sm">
                     <div>
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-black uppercase text-slate-400">Section {sectionName}</span>
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                ✅ Trail Netting Completed
+                                📜 Trail Netting History
                             </span>
                         </div>
                         <h2 className="text-2xl font-black text-slate-900 mt-1">
-                            Complete Details — Tank {tankName}
+                            Tank {tankName}
                         </h2>
-                        <p className="text-xs text-slate-500">
-                            Netting Date: {nettingDate} · Generated Report ID: #{report?.id || `rep-${tank?.id}`}
-                        </p>
                     </div>
                     <button
-                        onClick={onClose}
+                        onClick={handleClose}
                         className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-base flex items-center justify-center transition-all"
                     >
-                        ✕
+                        {selectedRecord ? '←' : '✕'}
                     </button>
                 </div>
 
-                {/* 1. Seed Order & Tank Information */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                        <span>🌱</span> Seed Order & Stocking Details
-                    </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                        <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Seed Added Date</span>
-                            <span className="font-extrabold text-slate-900">{startDate !== '—' ? formatDate(startDate) : '—'}</span>
+                {!selectedRecord ? (
+                    <>
+                        {/* Seed Order Context */}
+                        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+                            <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                <span>🌱</span> Reference Seed & Stocking Details
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                <div>
+                                    <span className="text-slate-400 block text-[10px] uppercase font-bold">DOC Ref / Seed Added</span>
+                                    <span className="font-extrabold text-slate-900">{startDate !== '—' ? formatDate(startDate) : '—'}</span>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Seed Quantity</span>
+                                    <span className="font-extrabold text-slate-900 font-mono">{Number(seedStocked).toLocaleString('en-IN')} PL</span>
+                                </div>
+                                <div className="md:col-span-2">
+                                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Hatchery</span>
+                                    <span className="font-extrabold text-slate-900 block truncate">{hatchery}</span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Days (DOC)</span>
-                            <span className="font-extrabold text-slate-900 font-mono">Day {doc}</span>
+
+                        {/* List of Activities */}
+                        <div className="space-y-4">
+                            <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 px-2">
+                                <span>⏱️</span> Recorded Activities ({recordsList.length})
+                            </h3>
+
+                            {recordsList.length === 0 ? (
+                                <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center">
+                                    <p className="text-sm font-bold text-slate-500">No actual Trail Netting activities saved.</p>
+                                </div>
+                            ) : (
+                                <div className="grid gap-3">
+                                    {recordsList.map((rec, idx) => {
+                                        const pDetails = rec.process_details || {};
+                                        const doc = pDetails.doc || '—';
+                                        const finalCount = rec.final_count || pDetails.latest_count || '—';
+
+                                        return (
+                                            <div
+                                                key={rec.id || idx}
+                                                onClick={() => setSelectedRecord(rec)}
+                                                className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-emerald-300 hover:shadow-md transition-all flex items-center justify-between group"
+                                            >
+                                                <div>
+                                                    <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Activity {idx + 1}</span>
+                                                    <h4 className="text-sm font-black text-slate-900">{formatDate(rec.date || rec.created_at)}</h4>
+                                                </div>
+                                                <div className="flex items-center gap-5">
+                                                    <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold border border-slate-200">
+                                                        Day {doc}
+                                                    </span>
+                                                    <div className="text-right">
+                                                        <span className="text-[10px] font-black uppercase text-slate-400 block">Final Count</span>
+                                                        <span className="text-sm font-black text-emerald-600 font-mono">{finalCount}</span>
+                                                    </div>
+                                                    <span className="text-slate-300 group-hover:text-emerald-500 transition-colors font-bold">→</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                        <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Seed Stocked</span>
-                            <span className="font-extrabold text-slate-900 font-mono">{Number(seedStocked).toLocaleString('en-IN')} PL</span>
+
+                        {/* Main Modal Footer */}
+                        <div className="flex justify-end pt-4 border-t border-slate-200">
+                            <button
+                                onClick={onClose}
+                                className="btn-secondary text-xs font-extrabold px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100"
+                            >
+                                Close History
+                            </button>
                         </div>
-                        <div>
-                            <span className="text-slate-400 block text-[10px] uppercase font-bold">Hatchery</span>
-                            <span className="font-extrabold text-slate-900 truncate block">{hatchery}</span>
-                        </div>
+                    </>
+                ) : (
+                    <ActivityDetailView
+                        rec={selectedRecord}
+                        tank={tank}
+                        tankName={tankName}
+                        hatchery={hatchery}
+                        seedStocked={seedStocked}
+                        startDate={startDate}
+                        onBack={() => setSelectedRecord(null)}
+                        onDownload={handleDownloadPDF}
+                        downloading={downloading}
+                    />
+                )}
+            </div>
+        </div>
+    );
+}
+
+function ActivityDetailView({ rec, tankName, hatchery, seedStocked, startDate, onBack, onDownload, downloading }) {
+    const pDetails = rec.process_details || {};
+    const doc = pDetails.doc || '—';
+    const checklist = pDetails.checklist || null;
+    const samples = pDetails.samples || rec.samples || [];
+    const diseases = pDetails.diseases || rec.diseases || [];
+    const remarks = pDetails.remarks || rec.remarks || '';
+    const photos = pDetails.photos || rec.photos || [];
+    const finalCount = rec.final_count || pDetails.latest_count || '—';
+
+    // Extract report specifics from process details for this specific activity
+    // Fallback to top-level if missing, but prioritized from this specific record's snapshot.
+    const rep = pDetails.report_data || pDetails || {};
+
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+            {/* Record Header */}
+            <div className="bg-slate-900 text-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-lg">
+                <div>
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1">
+                        Activity Details
+                    </span>
+                    <div className="flex items-center gap-3">
+                        <h4 className="text-xl font-black">{formatDate(rec.date || rec.created_at)}</h4>
+                        <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-200 text-xs font-bold border border-slate-700">
+                            Day {doc}
+                        </span>
                     </div>
                 </div>
+                <div className="bg-slate-800 px-5 py-2.5 rounded-xl border border-slate-700 text-right">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+                        Final Count
+                    </span>
+                    <span className="text-xl font-black text-emerald-400 font-mono">
+                        {finalCount}
+                    </span>
+                </div>
+            </div>
 
-                {/* 2. Verified Checklist Details */}
-                <div className="space-y-2">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                        <span>📋</span> Checklist Verification Details
-                    </h3>
-                    {checklist ? (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+
+                {/* Sampling Table */}
+                {samples.length > 0 && (
+                    <div>
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                            <span>⚖️</span> Sampling Breakdown
+                        </h5>
+                        <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                                    <tr>
+                                        <th className="p-3">Sample #</th>
+                                        <th className="p-3 text-right">KGs</th>
+                                        <th className="p-3 text-right">Pieces</th>
+                                        <th className="p-3 text-right">Count/KG</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {samples.map((s, sIdx) => {
+                                        const kgs = s.no_of_kgs || s.kgs || 0;
+                                        const pcs = s.pieces_count || s.pieces || 0;
+                                        const c = s.count || (kgs > 0 ? Math.round(pcs / kgs) : 0);
+                                        return (
+                                            <tr key={sIdx} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-3 font-bold text-slate-900">Sample {sIdx + 1}</td>
+                                                <td className="p-3 text-right font-mono">{kgs}</td>
+                                                <td className="p-3 text-right font-mono">{pcs}</td>
+                                                <td className="p-3 text-right font-mono font-bold text-emerald-700">{c}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {/* Checklist */}
+                {checklist && (
+                    <div>
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                            <span>📋</span> Checklist Verification
+                        </h5>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {Object.entries(checklist).map(([item, checked]) => (
                                 <div
                                     key={item}
-                                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${checked ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-200 text-slate-500'
-                                        }`}
+                                    className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between ${checked ? 'bg-emerald-50/60 border-emerald-200 text-emerald-900' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
                                 >
                                     <span>{item}</span>
                                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-white border ${checked ? 'border-emerald-300 text-emerald-700' : 'border-slate-300 text-slate-500'}`}>
@@ -193,239 +277,145 @@ export default function TrailNettingHistoryModal({ isOpen, onClose, tank, report
                                 </div>
                             ))}
                         </div>
-                    ) : (
-                        <p className="text-xs text-slate-400 italic">No checklist data recorded.</p>
-                    )}
-                </div>
-
-
-                {/* 3. Sampling & Weight Details */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                            <span>⚖️</span> Weight & Sampling Breakdown
-                        </h3>
-                        <span className="text-xs font-extrabold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 font-mono">
-                            Final Count: {latestCount} Count/KG
-                        </span>
-                    </div>
-
-                    {samples.length > 0 ? (
-                        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                            <table className="w-full text-left text-xs">
-                                <thead className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200">
-                                    <tr>
-                                        <th className="p-3">Sample #</th>
-                                        <th className="p-3 text-right">No. of KGs</th>
-                                        <th className="p-3 text-right">Pieces Count</th>
-                                        <th className="p-3 text-right">Count/KG</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {samples.map((s, idx) => {
-                                        const kgs = s.no_of_kgs || s.kgs || 0;
-                                        const pcs = s.pieces_count || s.pieces || 0;
-                                        const c = s.count || (kgs > 0 ? Math.round(pcs / kgs) : 0);
-                                        return (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 font-bold text-slate-900">Sample {idx + 1}</td>
-                                                <td className="p-3 text-right font-mono text-slate-800">{kgs} KG</td>
-                                                <td className="p-3 text-right font-mono text-slate-800">{pcs}</td>
-                                                <td className="p-3 text-right font-mono font-bold text-emerald-800">{c} Count/KG</td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <p className="text-xs text-slate-400 italic">No sampling data recorded.</p>
-                    )}
-                </div>
-
-
-                {/* 4. Disease Observations & Findings */}
-                <div className="space-y-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                        <span>🔬</span> Disease Observations & Remarks
-                    </h3>
-                    <div className="space-y-2 text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-bold text-slate-500">Diseases Selection:</span>
-                            {diseases.length > 0 ? (
-                                diseases.map((d, i) => (
-                                    <span key={i} className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-extrabold">
-                                        ⚠️ {d}
-                                    </span>
-                                ))
-                            ) : (
-                                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-extrabold">
-                                    ✅ No Diseases Observed (Healthy)
-                                </span>
-                            )}
-                        </div>
-                        {remarks && (
-                            <div>
-                                <span className="font-bold text-slate-500 block">Supervisor Remarks:</span>
-                                <p className="text-slate-800 bg-white p-2.5 rounded-xl border border-slate-200 mt-1 italic">
-                                    &quot;{remarks}&quot;
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* 5. Photos Captured / Uploaded */}
-                {(rawPhotos.length > 0 || resolvedPhotos.length > 0) && (
-                    <div className="space-y-2">
-                        <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                            <span>📷</span> Captured Trail Netting Photos ({rawPhotos.length})
-                        </h3>
-                        {resolvingPhotos ? (
-                            <div className="text-xs text-slate-500 animate-pulse flex items-center gap-2">
-                                <span className="inline-block w-4 h-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin"></span>
-                                Resolving photos...
-                            </div>
-                        ) : (
-                            <div className="flex flex-wrap gap-3">
-                                {resolvedPhotos.map((p, idx) => (
-                                    <div key={idx} className="w-24 h-24 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 shadow-sm flex items-center justify-center">
-                                        {typeof p === 'string' && (p.startsWith('data:') || p.startsWith('blob:') || p.startsWith('http')) ? (
-                                            <img src={p} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="text-center p-2">
-                                                <span className="text-2xl">📷</span>
-                                                <span className="block text-[9px] text-slate-500 font-bold truncate">Photo {idx + 1}</span>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 )}
 
-                {/* 6. Generated Trail Netting Report — Full Data */}
-                <div className="space-y-4 bg-slate-900 text-white p-5 rounded-2xl shadow-lg">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                        <h3 className="text-sm font-black text-white flex items-center gap-2">
-                            <span>📊</span> Generated Trail Netting Report
-                        </h3>
-                        <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 bg-emerald-900 text-emerald-200 border border-emerald-700 rounded-full">
-                            {report?.process_details?.status === 'completed' ? '✅ Completed Report' : 'Report Generated'}
-                        </span>
-                    </div>
-
-                    {/* Row 1: Core Metrics */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                        <ReportCell label="Tank No" value={tankName} />
-                        <ReportCell label="Hatchery" value={report?.hatchery || hatchery} />
-                        <ReportCell label="Seed Stocked" value={fmt(report?.seed_stocked || seedStocked)} />
-                        <ReportCell label="Survived Seed" value={fmt(report?.survived_seed || seedStocked)} highlight />
-                    </div>
-
-                    {/* Row 2: Count & Growth */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                        <ReportCell label="DOC (Days)" value={report?.doc || doc} />
-                        <ReportCell label="Latest Date" value={report?.latest_date || '—'} />
-                        <ReportCell label="Previous Date" value={report?.previous_date || '—'} />
-                        <ReportCell label="Latest Count" value={report?.latest_count ?? latestCount} highlight />
-                        <ReportCell label="Previous Count" value={report?.previous_count ?? '—'} />
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                        <ReportCell label="Count Diff" value={report?.count_diff ?? '—'} />
-                        <ReportCell label="Growth Diff" value={report?.growth_diff ?? '—'} />
-                        <ReportCell label="Weekly Growth" value={report?.weekly_growth != null ? `${report.weekly_growth} g` : '—'} />
-                        <ReportCell label="Feed Consp (Between)" value={fmt(report?.feed_consp_between)} />
-                        <ReportCell label="Growth Kgs (Between)" value={fmt(report?.growth_kgs_between)} />
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                        <ReportCell label="FCR (Between Period)" value={report?.fcr_between ?? '—'} />
-                        <ReportCell label="Feed Consp (Total)" value={fmt(report?.feed_consp_total)} />
-                        <ReportCell label="Trail Net Count" value={report?.trailnet_count ?? '—'} />
-                    </div>
-
-                    {/* Row 3: Middle Harvest */}
-                    {(report?.middle_1_tonnage != null || report?.middle_2_tonnage != null || report?.middle_3_tonnage != null || report?.latest_middle_date || report?.middle_1_date) && (
-                        <>
-                            <div className="border-t border-slate-700 pt-3">
-                                <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Middle Harvest Data</p>
+                {/* Diseases & Remarks */}
+                {(diseases.length > 0 || remarks) && (
+                    <div>
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                            <span>🔬</span> Observations & Remarks
+                        </h5>
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-slate-500 text-xs">Diseases:</span>
+                                {diseases.length > 0 ? (
+                                    diseases.map((d, i) => (
+                                        <span key={i} className="px-2.5 py-1 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-extrabold">
+                                            ⚠️ {d}
+                                        </span>
+                                    ))
+                                ) : (
+                                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-extrabold">
+                                        ✅ No Diseases Observed
+                                    </span>
+                                )}
                             </div>
-                            <div className="grid grid-cols-3 gap-3 text-xs">
-                                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700 space-y-1.5">
-                                    <p className="text-[10px] font-extrabold uppercase text-amber-400">Middle 1</p>
-                                    <ReportCell label="Date" value={report?.middle_1_date || report?.latest_middle_date || '—'} dark />
-                                    <ReportCell label="Tonnage" value={fmt(report?.middle_1_tonnage)} dark />
-                                    <ReportCell label="Count" value={report?.middle_1_count ?? '—'} dark />
+                            {remarks && (
+                                <div>
+                                    <span className="font-bold text-slate-500 text-xs block mb-1">Supervisor Remarks:</span>
+                                    <p className="text-xs text-slate-800 bg-white p-3 rounded-xl border border-slate-200 italic shadow-sm">
+                                        "{remarks}"
+                                    </p>
                                 </div>
-                                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700 space-y-1.5">
-                                    <p className="text-[10px] font-extrabold uppercase text-amber-400">Middle 2</p>
-                                    <ReportCell label="Date" value={report?.middle_2_date || '—'} dark />
-                                    <ReportCell label="Tonnage" value={fmt(report?.middle_2_tonnage)} dark />
-                                    <ReportCell label="Count" value={report?.middle_2_count ?? '—'} dark />
-                                </div>
-                                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700 space-y-1.5">
-                                    <p className="text-[10px] font-extrabold uppercase text-amber-400">Middle 3</p>
-                                    <ReportCell label="Date" value={report?.middle_3_date || '—'} dark />
-                                    <ReportCell label="Tonnage" value={fmt(report?.middle_3_tonnage)} dark />
-                                    <ReportCell label="Count" value={report?.middle_3_count ?? '—'} dark />
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                                <ReportCell label="Middle Harvested Seed" value={fmt(report?.middle_harvested_seed)} />
-                                <ReportCell label="Remaining Seed" value={fmt(report?.remaining_seed)} />
-                                <ReportCell label="Middle Tonnage Total" value={fmt(report?.middle_tonnage_total)} highlight />
-                                <ReportCell label="Remaining Tonnage" value={fmt(report?.remaining_tonnage)} />
-                            </div>
-                        </>
-                    )}
-
-                    {/* Row 4: FCR & Expected */}
-                    <div className="border-t border-slate-700 pt-3">
-                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">FCR & Expected Tonnage</p>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                        <ReportCell label="FCR (1.2)" value={report?.fcr_1_2 != null ? fmt(report.fcr_1_2) : '—'} />
-                        <ReportCell label="FCR (1.3)" value={report?.fcr_1_3 != null ? fmt(report.fcr_1_3) : '—'} />
-                        <ReportCell label="Expected FCR" value={report?.expected_fcr ?? '—'} />
-                        <ReportCell label="Expected Tonnage (Feed & FCR)" value={fmt(report?.expected_tonnage_feed_fcr)} />
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                        <ReportCell label="Expected Tonnage (Rem Seed)" value={fmt(report?.expected_tonnage_rem_seed)} />
-                        <ReportCell label="Final Harvest Tonnage" value={fmt(report?.final_harvest_tonnage)} highlight />
-                        <ReportCell label="Final Harvest Count" value={report?.final_harvest_count ?? '—'} />
-                    </div>
-
-                    {/* Row 5: Survival */}
-                    <div className="border-t border-slate-700 pt-3">
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
-                            <ReportCell label="Total Seed Catched" value={fmt(report?.total_seed_catched)} highlight />
-                            <ReportCell label="Survival %" value={report?.survival_percentage != null ? `${report.survival_percentage}%` : '—'} highlight />
+                            )}
                         </div>
                     </div>
+                )}
+
+                {/* Photos */}
+                {photos.length > 0 && (
+                    <div>
+                        <h5 className="text-xs font-black uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                            <span>📷</span> Evidence Photos
+                        </h5>
+                        <div className="flex flex-wrap gap-3">
+                            {photos.map((p, pIdx) => (
+                                <div key={pIdx} className="w-24 h-24 rounded-2xl border border-slate-200 overflow-hidden bg-slate-100 shadow-sm flex items-center justify-center">
+                                    {typeof p === 'string' && (p.startsWith('data:') || p.startsWith('http')) ? (
+                                        <img src={p} alt={`Photo ${pIdx + 1}`} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="text-center p-2">
+                                            <span className="text-2xl">📷</span>
+                                            <span className="block text-[9px] text-slate-500 font-bold truncate">Photo {pIdx + 1}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Generated Trail Netting Report — Specific to this record */}
+            <div className="space-y-4 bg-slate-900 text-white p-5 rounded-2xl shadow-lg">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <h3 className="text-sm font-black text-white flex items-center gap-2">
+                        <span>📊</span> Trail Netting Report Values
+                    </h3>
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 bg-slate-800 text-slate-300 border border-slate-700 rounded-full">
+                        Saved Workflow Data
+                    </span>
                 </div>
 
-                {/* Modal Footer */}
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
-                    <button
-                        onClick={handleDownloadPDF}
-                        disabled={downloading}
-                        className="btn-primary bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold px-5 py-3 flex items-center justify-center gap-2 border-none rounded-xl transition-colors shadow-lg w-full md:w-auto"
-                    >
-                        {downloading ? '⏳ Exporting...' : '📄 Download Complete Report PDF'}
-                    </button>
-                    <button
-                        onClick={onClose}
-                        className="btn-secondary text-xs font-extrabold px-5 py-2.5 rounded-xl"
-                    >
-                        Close Details
-                    </button>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <ReportCell label="Tank No" value={tankName} />
+                    <ReportCell label="Hatchery" value={rep?.hatchery || hatchery} />
+                    <ReportCell label="Seed Stocked" value={fmt(rep?.seed_stocked || seedStocked)} />
+                    <ReportCell label="Survived Seed" value={fmt(rep?.survived_seed || seedStocked)} highlight />
                 </div>
 
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <ReportCell label="DOC (Days)" value={rep?.doc || doc} />
+                    <ReportCell label="Latest Date" value={rep?.latest_date || formatDate(rec.date || rec.created_at) || '—'} />
+                    <ReportCell label="Previous Date" value={rep?.previous_date || '—'} />
+                    <ReportCell label="Latest Count" value={rep?.latest_count ?? finalCount} highlight />
+                    <ReportCell label="Previous Count" value={rep?.previous_count ?? '—'} />
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                    <ReportCell label="Count Diff" value={rep?.count_diff ?? '—'} />
+                    <ReportCell label="Growth Diff" value={rep?.growth_diff ?? '—'} />
+                    <ReportCell label="Weekly Growth" value={rep?.weekly_growth != null ? `${rep.weekly_growth} g` : '—'} />
+                    <ReportCell label="Feed Consp (Between)" value={fmt(rep?.feed_consp_between)} />
+                    <ReportCell label="Growth Kgs (Between)" value={fmt(rep?.growth_kgs_between)} />
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                    <ReportCell label="FCR (Between Period)" value={rep?.fcr_between ?? '—'} />
+                    <ReportCell label="Feed Consp (Total)" value={fmt(rep?.feed_consp_total)} />
+                    <ReportCell label="Trail Net Count" value={rep?.trailnet_count ?? '—'} />
+                </div>
+
+                <div className="border-t border-slate-800 pt-3">
+                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">FCR & Expected Tonnage</p>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <ReportCell label="FCR (1.2)" value={rep?.fcr_1_2 != null ? fmt(rep.fcr_1_2) : '—'} />
+                    <ReportCell label="FCR (1.3)" value={rep?.fcr_1_3 != null ? fmt(rep.fcr_1_3) : '—'} />
+                    <ReportCell label="Expected FCR" value={rep?.expected_fcr ?? '—'} />
+                    <ReportCell label="Expected Tonnage (Feed & FCR)" value={fmt(rep?.expected_tonnage_feed_fcr)} />
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                    <ReportCell label="Expected Tonnage (Rem Seed)" value={fmt(rep?.expected_tonnage_rem_seed)} />
+                    <ReportCell label="Final Harvest Tonnage" value={fmt(rep?.final_harvest_tonnage)} highlight />
+                    <ReportCell label="Final Harvest Count" value={rep?.final_harvest_count ?? '—'} />
+                </div>
+
+                <div className="border-t border-slate-800 pt-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                        <ReportCell label="Total Seed Catched" value={fmt(rep?.total_seed_catched)} highlight />
+                        <ReportCell label="Survival %" value={rep?.survival_percentage != null ? `${rep.survival_percentage}%` : '—'} highlight />
+                    </div>
+                </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
+                <button
+                    onClick={onDownload}
+                    disabled={downloading}
+                    className="btn-primary bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold px-5 py-3 flex items-center justify-center gap-2 border-none rounded-xl transition-colors shadow-lg w-full md:w-auto"
+                >
+                    {downloading ? '⏳ Exporting...' : '📄 Download Activity PDF'}
+                </button>
+                <button
+                    onClick={onBack}
+                    className="btn-secondary text-xs font-extrabold px-5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100"
+                >
+                    Back to Activities
+                </button>
             </div>
         </div>
     );

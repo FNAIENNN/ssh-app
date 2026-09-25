@@ -10,12 +10,12 @@ function dateInput(value = new Date()) {
     return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-function calculateDoc(startDate, selectedDate) {
-    if (!startDate || !selectedDate) return null;
-    const start = new Date(`${String(startDate).slice(0, 10)}T00:00:00`);
-    const selected = new Date(`${selectedDate}T00:00:00`);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(selected.getTime())) return null;
-    return Math.max(1, Math.floor((selected - start) / 86400000) + 1);
+function calculateDoc(selectedDate, stockingDate) {
+    if (!selectedDate || !stockingDate) return null;
+    const selected = new Date(`${String(selectedDate).slice(0, 10)}T00:00:00`);
+    const stocking = new Date(`${String(stockingDate).slice(0, 10)}T00:00:00`);
+    if (Number.isNaN(selected.getTime()) || Number.isNaN(stocking.getTime())) return null;
+    return Math.max(1, Math.floor((stocking - selected) / 86400000) + 1);
 }
 
 function cleanHatchery(value) {
@@ -92,6 +92,9 @@ export default function AdditionalStockingReview({ tanks, activeOrder, step2Data
                     if (matchedTank.start_date) {
                         datesSet.add(String(matchedTank.start_date).slice(0, 10));
                     }
+                    if (matchedTank.doc_reference_date) {
+                        datesSet.add(String(matchedTank.doc_reference_date).slice(0, 10));
+                    }
 
                     bills.forEach(bill => {
                         const hasTank = Array.isArray(bill.selected_tanks) && bill.selected_tanks.some(t => String(t.id) === String(matchedTank.id));
@@ -106,7 +109,7 @@ export default function AdditionalStockingReview({ tanks, activeOrder, step2Data
 
                     setDocDates(prev => {
                         if (!prev[key]) {
-                            return { ...prev, [key]: sorted[0] || today };
+                            return { ...prev, [key]: (matchedTank.doc_reference_date ? String(matchedTank.doc_reference_date).slice(0, 10) : sorted[0] || today) };
                         }
                         return prev;
                     });
@@ -137,7 +140,8 @@ export default function AdditionalStockingReview({ tanks, activeOrder, step2Data
                     const key = String(matchedTank.id || matchedTank.name || idx);
                     const startDate = matchedTank.start_date || '';
                     const selectedDate = docDates[key] || today;
-                    const doc = calculateDoc(startDate, selectedDate);
+                    const newDate = dateInput(activeOrder?.stocking_date || activeOrder?.updated_at || new Date()) || today;
+                    const doc = calculateDoc(selectedDate, newDate);
                     const existingQty = Number(matchedTank.quantity) || 0;
                     const finalNewQty = Number(newQuantity) || 0;
                     const details = resolveNewDetails(matchedTank.name, activeOrder, step2Data, vehicles);
@@ -145,7 +149,7 @@ export default function AdditionalStockingReview({ tanks, activeOrder, step2Data
                     const addingHatchery = cleanHatchery(activeOrder?.hatchery);
                     const combined = [...existingHatcheries];
                     if (addingHatchery && !combined.some((name) => name.toLowerCase() === addingHatchery.toLowerCase())) combined.push(addingHatchery);
-                    const newDate = dateInput(activeOrder?.stocking_date || activeOrder?.updated_at || new Date()) || today;
+
 
                     return (
                         <article key={key} className="overflow-hidden rounded-[16px] border" style={{ borderColor: 'var(--color-border)' }}>
@@ -243,7 +247,7 @@ export default function AdditionalStockingReview({ tanks, activeOrder, step2Data
 
             <div className="mt-6 flex flex-col-reverse gap-3 border-t pt-4 sm:pt-6 sm:flex-row sm:justify-end" style={{ borderColor: 'var(--color-border)' }}>
                 <button type="button" onClick={onBack} className="btn-ghost px-4 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-sm font-bold border sm:border-0 rounded-lg">Cancel / Go Back</button>
-                <button type="button" onClick={onConfirm} className="bg-slate-900 hover:bg-slate-800 text-white rounded-lg px-4 py-2.5 sm:px-8 sm:py-3 text-xs sm:text-sm font-extrabold shadow-sm sm:shadow-md transition-colors">Confirm Additional Stocking &amp; Continue to Outside Workers</button>
+                <button type="button" onClick={() => onConfirm(docDates)} className="bg-slate-900 hover:bg-slate-800 text-white rounded-lg px-4 py-2.5 sm:px-8 sm:py-3 text-xs sm:text-sm font-extrabold shadow-sm sm:shadow-md transition-colors">Confirm Additional Stocking &amp; Continue to Outside Workers</button>
             </div>
         </div>
     );

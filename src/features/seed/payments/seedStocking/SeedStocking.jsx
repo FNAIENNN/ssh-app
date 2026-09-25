@@ -65,6 +65,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
   // Workflow Step State: 1 | 2 | 3 | 4 | 'completed'
   const [step, setStep] = useState(1);
   const [additionalStockingTanks, setAdditionalStockingTanks] = useState([]);
+  const [selectedDocDates, setSelectedDocDates] = useState({});
   const [pendingNavigationIntent, setPendingNavigationIntent] = useState(null);
   const [reviewedAllocationSignature, setReviewedAllocationSignature] = useState(null);
   const [siteTanks, setSiteTanks] = useState([]);
@@ -79,7 +80,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     ] = await Promise.all([
       supabase
         .from(TABLES.tanks)
-        .select('id, name, start_date, quantity, hatchery')
+        .select('id, name, start_date, doc_reference_date, quantity, hatchery')
         .eq('site_id', siteId),
       supabase
         .from(TABLES.trailNettingRecords)
@@ -380,9 +381,10 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     }
   }
 
-  function handleConfirmAdditionalStocking() {
+  function handleConfirmAdditionalStocking(docDates) {
     const finalMap = buildFinalAllocationMap(activeOrder, step2Data);
     setReviewedAllocationSignature(generateAllocationSignature(finalMap));
+    if (docDates) setSelectedDocDates(docDates);
 
     if (pendingNavigationIntent === 'final-commit-blocked') {
       toast.success("Additional Stocking confirmed. You may now complete the order.");
@@ -543,7 +545,7 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
     if (Object.keys(allTankStates).length > 0) {
       const { data: freshSiteTanks } = await supabase
         .from(TABLES.tanks)
-        .select('id, name, start_date, quantity, hatchery')
+        .select('id, name, start_date, doc_reference_date, quantity, hatchery')
         .eq('site_id', siteId);
       const activeCycleById = new Map(siteTanks.map((tank) => [String(tank.id), tank.is_active_seed_cycle]));
       const persistedSiteTanks = (freshSiteTanks || []).map((tank) => ({
@@ -596,6 +598,9 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
               stockingDate,
             }),
             seed_type: activeOrder.seed_type || 'Vannamei',
+            doc_reference_date: matchedTank?.is_active_seed_cycle
+              ? (selectedDocDates[String(matchedTank.id || matchedTank.name)] || matchedTank.doc_reference_date || matchedTank.start_date || stockingDate)
+              : stockingDate,
           };
 
           let resolvedTankId = matchedTank?.id || null;
@@ -920,11 +925,11 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             {/* 2. Cash Payment Details */}
             <div className="card p-5 space-y-3 border">
               <h3 className="font-extrabold text-base text-primary border-b pb-2">💵 2. Cash Payment Details</h3>
-              {(!completedBillData.payments || completedBillData.payments.filter((p) => p.method === 'cash' && (!p.type || p.type === 'seed')).length === 0) ? (
+              {(!completedBillData.payments || completedBillData.payments.filter((p) => p.method === 'cash' && (!p.type || p.type === 'seed' || p.type === 'seed_order')).length === 0) ? (
                 <p className="text-xs text-text-muted italic">No advance cash payments recorded.</p>
               ) : (
                 <div className="space-y-2">
-                  {completedBillData.payments.filter((p) => p.method === 'cash' && (!p.type || p.type === 'seed')).map((p) => (
+                  {completedBillData.payments.filter((p) => p.method === 'cash' && (!p.type || p.type === 'seed' || p.type === 'seed_order')).map((p) => (
                     <div key={p.id} className="p-3 rounded-[8px] bg-slate-50 border flex justify-between items-center text-xs">
                       <div>
                         <p className="font-semibold">{new Date(p.created_at).toLocaleString()}</p>
@@ -940,11 +945,11 @@ export default function SeedStocking({ siteId, stockingOrder = null, onStockingC
             {/* 3. Advance Payment Details */}
             <div className="card p-5 space-y-3 border">
               <h3 className="font-extrabold text-base text-primary border-b pb-2">🧾 3. Advance Payment Details</h3>
-              {(!completedBillData.payments || completedBillData.payments.filter((p) => p.method === 'advance' && (!p.type || p.type === 'seed')).length === 0) ? (
+              {(!completedBillData.payments || completedBillData.payments.filter((p) => p.method === 'advance' && (!p.type || p.type === 'seed' || p.type === 'seed_order')).length === 0) ? (
                 <p className="text-xs text-text-muted italic">No advance bank payments recorded.</p>
               ) : (
                 <div className="space-y-2">
-                  {completedBillData.payments.filter((p) => p.method === 'advance' && (!p.type || p.type === 'seed')).map((p) => (
+                  {completedBillData.payments.filter((p) => p.method === 'advance' && (!p.type || p.type === 'seed' || p.type === 'seed_order')).map((p) => (
                     <div key={p.id} className="p-3 rounded-[8px] bg-slate-50 border flex justify-between items-center text-xs">
                       <div>
                         <p className="font-semibold">{new Date(p.created_at).toLocaleString()}</p>

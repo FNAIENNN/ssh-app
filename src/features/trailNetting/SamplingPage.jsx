@@ -177,18 +177,7 @@ export default function SamplingPage() {
 
           if (data?.path) {
             const { data: urlData } = supabase.storage.from('media').getPublicUrl(data.path);
-            let finalUrl = urlData?.publicUrl || data.path;
-
-            // If using the local demo client (returns '#'), convert the file to a base64 data URI so it can persist and render.
-            if (finalUrl === '#') {
-              finalUrl = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(p.file);
-              });
-            }
-
-            uploadedPhotos.push(finalUrl);
+            uploadedPhotos.push(urlData?.publicUrl || data.path);
           } else {
             uploadedPhotos.push(fileName);
           }
@@ -209,7 +198,7 @@ export default function SamplingPage() {
     const prevCount = prevRecord?.final_count ?? null;
     const countDiff = prevCount != null ? latestCount - prevCount : null;
 
-    const cadence = computeCadence({ startDate: tank?.start_date, records });
+    const cadence = computeCadence({ startDate: tank?.doc_reference_date || tank?.start_date, records });
     const doc = cadence.day;
 
     let checklistData = null;

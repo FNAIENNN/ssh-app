@@ -22,7 +22,7 @@ export function daysBetween(a, b) {
 /** Days elapsed since stocking/start date (the "Day X" counter on tank cards). */
 export function daysSinceStart(startDate) {
   if (!startDate) return 0;
-  return Math.max(0, daysBetween(startDate, new Date()));
+  return Math.max(0, daysBetween(startDate, new Date())) + 1;
 }
 
 /**
@@ -35,7 +35,7 @@ export function computeCadence({ startDate, records = [] }) {
   );
   const today = new Date();
   const start = startDate ? new Date(startDate) : null;
-  const day = start ? daysBetween(start, today) : 0;
+  const day = start ? daysBetween(start, today) + 1 : 0;
 
   const doneCount = sorted.length;
   const lastRecord = sorted[sorted.length - 1] || null;
@@ -48,9 +48,9 @@ export function computeCadence({ startDate, records = [] }) {
   if (doneCount === 0) {
     if (start) {
       const d45 = new Date(start);
-      d45.setDate(d45.getDate() + 45);
+      d45.setDate(d45.getDate() + 44);
       const d60 = new Date(start);
-      d60.setDate(d60.getDate() + 60);
+      d60.setDate(d60.getDate() + 59);
       windowStart = d45;
       windowEnd = d60;
       nextExpectedDate = d45;

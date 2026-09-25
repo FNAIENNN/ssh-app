@@ -23,6 +23,7 @@ export default function TankList() {
   const [reports, setReports] = useState({}); // tankId -> latest report
   const [seedEntries, setSeedEntries] = useState([]);
   const [stockingTimes, setStockingTimes] = useState({}); // normalizedTankName -> latest billTime
+  const [middleHarvests, setMiddleHarvests] = useState({}); // tankId -> latest middle harvest entry
   const [showMenu, setShowMenu] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +47,7 @@ export default function TankList() {
         setSections(secs ?? []);
 
         // 2. Fetch tanks, seed entries, AND completed seed bills in parallel
-        const [{ data: tks }, { data: sEntries }, { data: completedBills }] = await Promise.all([
+        const [{ data: tks }, { data: sEntries }, { data: completedBills }, { data: mhEntries }] = await Promise.all([
           supabase
             .from(TABLES.tanks)
             .select('*, sections(name)')
@@ -62,6 +63,12 @@ export default function TankList() {
             .eq('site_id', siteId)
             .eq('type', 'seed')
             .in('status', ['Completed']),
+          supabase
+            .from(TABLES.harvestEntries)
+            .select('tank_id, date, created_at, final_count')
+            .eq('site_id', siteId)
+            .eq('harvest_type', 'middle')
+            .order('created_at', { ascending: false }),
         ]);
 
         const seedEntryTankIds = new Set(
@@ -229,6 +236,9 @@ export default function TankList() {
 
         // Active/pending tanks: completed Seed Order tanks that have NOT completed Trail Netting for the current cycle.
         const pending = stocked.filter((t) => {
+          // Exclude fully harvested tanks from Trail Netting
+          if (!t.start_date || (t.quantity !== null && Number(t.quantity) <= 0)) return false;
+
           const report = repMap[t.id];
           if (!report) return true; // No report ever — always pending
           if (report.process_details?.status === 'draft') return true;
@@ -241,13 +251,15 @@ export default function TankList() {
             return reportTime < exactStockingTime;
           }
 
-          if (!t.start_date) return false;
           const startTime = new Date(t.start_date).getTime();
           return reportTime < startTime;
         });
 
         // History tanks: tanks for which a Trail Netting Report was generated for the current cycle
-        const completed = combinedSiteTanks.filter((t) => {
+        const completedRaw = combinedSiteTanks.filter((t) => {
+          // Exclude fully harvested tanks from Trail Netting
+          if (!t.start_date || (t.quantity !== null && Number(t.quantity) <= 0)) return false;
+
           const report = repMap[t.id];
           if (!report) return false;
           if (report.process_details?.status === 'draft') return false;
@@ -260,14 +272,52 @@ export default function TankList() {
             return reportTime >= exactStockingTime;
           }
 
-          if (!t.start_date) return true;
           const startTime = new Date(t.start_date).getTime();
           return reportTime >= startTime;
         });
 
+        const completedGroups = new Map();
+        for (const t of completedRaw) {
+          const pName = String(t.name || t.id).trim().toLowerCase();
+          if (!completedGroups.has(pName)) {
+            completedGroups.set(pName, []);
+          }
+          completedGroups.get(pName).push(t);
+        }
+
+        const groupedCompletedTanks = [];
+        for (const group of completedGroups.values()) {
+          group.sort((a, b) => new Date(b.start_date || b.created_at || 0) - new Date(a.start_date || a.created_at || 0));
+          const latestTank = { ...group[0] };
+
+          const hatcheries = new Set();
+          for (const t of group) {
+            if (t.hatchery) {
+              t.hatchery.split('+').forEach(h => {
+                const hTrim = h.trim();
+                if (hTrim) hatcheries.add(hTrim);
+              });
+            }
+          }
+          if (hatcheries.size > 0) {
+            latestTank.hatchery = Array.from(hatcheries).join(' + ');
+          }
+
+          latestTank._groupTankIds = group.map(t => t.id);
+          groupedCompletedTanks.push(latestTank);
+        }
+
         setPendingTanks(pending);
-        setCompletedTanks(completed);
+        setCompletedTanks(groupedCompletedTanks);
         setStockingTimes(tankStockingTimes);
+
+        const mhMap = {};
+        (mhEntries ?? []).forEach(h => {
+          if (!mhMap[h.tank_id]) {
+            mhMap[h.tank_id] = h;
+          }
+        });
+        setMiddleHarvests(mhMap);
       } catch (err) {
         console.error("TankList Data Fetch Error:", err);
       } finally {
@@ -451,11 +501,22 @@ export default function TankList() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {sectionTanks.map((t) => {
-            const allTankRecords = records[t.id] ?? [];
             const latestReport = reports[t.id];
 
             if (activeTab === 'history') {
-              const cadence = computeCadence({ startDate: t.start_date, records: allTankRecords });
+              let allTankRecords = [];
+              if (t._groupTankIds) {
+                t._groupTankIds.forEach(id => {
+                  if (records[id]) {
+                    allTankRecords.push(...records[id]);
+                  }
+                });
+                allTankRecords.sort((a, b) => new Date(a.date || a.created_at || 0) - new Date(b.date || b.created_at || 0));
+              } else {
+                allTankRecords = records[t.id] ?? [];
+              }
+
+              const cadence = computeCadence({ startDate: t.doc_reference_date || t.start_date, records: allTankRecords });
               return (
                 <HistoryTankCardTN
                   key={t.id}
@@ -468,8 +529,9 @@ export default function TankList() {
             }
 
             // For Active/Pending Tab: Filter records for the CURRENT cycle only
+            const allTankRecords = records[t.id] ?? [];
             const currentCycleRecords = currentCycleNettingRecords(t, allTankRecords);
-            const cadence = computeCadence({ startDate: t.start_date, records: currentCycleRecords });
+            const cadence = computeCadence({ startDate: t.doc_reference_date || t.start_date, records: currentCycleRecords });
             const cardData = buildTankCardData({ tank: t, seedEntries, records: allTankRecords, report: latestReport });
 
             return (
@@ -478,6 +540,7 @@ export default function TankList() {
                 tank={t}
                 cadence={cadence}
                 cardData={cardData}
+                middleHarvest={middleHarvests[t.id]}
                 onNet={() => navigate(`/app/trail-netting/${t.id}/checklist`)}
               />
             );
@@ -505,7 +568,7 @@ export default function TankList() {
 
 function HistoryTankCardTN({ tank, report, recordsList, onViewReport }) {
   const tankRecords = recordsList ?? [];
-  const cadence = computeCadence({ startDate: tank.start_date, records: tankRecords });
+  const cadence = computeCadence({ startDate: tank.doc_reference_date || tank.start_date, records: tankRecords });
   const lastRec = tankRecords[tankRecords.length - 1];
   const latestCountVal = lastRec?.final_count || report?.latest_count || '—';
   const latestCountDate = lastRec?.date
@@ -558,12 +621,12 @@ function HistoryTankCardTN({ tank, report, recordsList, onViewReport }) {
   );
 }
 
-function TankCardTN({ tank, cadence, cardData, onNet }) {
+function TankCardTN({ tank, cadence, cardData, middleHarvest, onNet }) {
   // Tank completed 45 days or more since seed stocking
   const reachedDay45 = cadence.day >= 45;
 
   return (
-    <div className="h-full rounded-2xl p-4 border-2 border-slate-200 bg-slate-50/50 hover:border-slate-300 transition flex flex-col">
+    <div className="h-full rounded-2xl p-4 border-2 transition flex flex-col border-slate-200 bg-slate-50/50 hover:border-slate-300">
       {/* Header Row: Tank Name & Status */}
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
@@ -581,21 +644,28 @@ function TankCardTN({ tank, cadence, cardData, onNet }) {
             )}
           </div>
         </div>
-        <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${cadence.status === 'overdue'
-          ? 'bg-red-50 text-red-700 border-red-200'
-          : cadence.canNet
-            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-            : 'bg-slate-200 text-slate-600 border-slate-300'
+        <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${!reachedDay45
+          ? 'bg-slate-200 text-slate-500 border-slate-300'
+          : cadence.status === 'overdue'
+            ? 'bg-red-50 text-red-700 border-red-200'
+            : cadence.canNet
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              : 'bg-slate-200 text-slate-600 border-slate-300'
           }`}>
-          {cadence.status === 'overdue' ? 'Overdue' : cadence.canNet ? 'Eligible' : 'Active'}
+          {!reachedDay45 ? 'Ineligible' : cadence.status === 'overdue' ? 'Overdue' : cadence.canNet ? 'Eligible' : 'Active'}
         </span>
       </div>
 
-      {/* Eligibility note (displayed ONLY when completed 45 days or more) */}
-      {reachedDay45 && (
+      {/* Eligibility note */}
+      {reachedDay45 ? (
         <div className="mb-3 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
           <span aria-hidden="true">✓</span>
           <span>Eligible for Trail Netting</span>
+        </div>
+      ) : (
+        <div className="mb-3 flex items-center gap-1.5 text-[11px] font-bold text-slate-500">
+          <span aria-hidden="true">✗</span>
+          <span>Not Eligible (Needs 45 Days)</span>
         </div>
       )}
 
@@ -606,6 +676,12 @@ function TankCardTN({ tank, cadence, cardData, onNet }) {
         <CardRow label="Feed" value={cardData.feed != null ? `${Number(cardData.feed).toLocaleString('en-IN')} KG` : '—'} />
         <CardRow label="Latest Count" value={cardData.latestCount != null ? `${cardData.latestCount} Count/KG` : '—'} />
         <CardRow label="Latest Count Date" value={formatDate(cardData.latestCountDate)} />
+        {middleHarvest && (
+          <>
+            <CardRow label="Middle Harvest Date" value={formatDate(middleHarvest.date || middleHarvest.created_at)} />
+            <CardRow label="Middle Harvest Count" value={`${middleHarvest.final_count} Count/KG`} />
+          </>
+        )}
         <CardRow label="Hatchery" value={cardData.hatchery} />
         <CardRow label="Netting Count" value={cardData.nettingCount} />
       </div>
@@ -615,7 +691,7 @@ function TankCardTN({ tank, cadence, cardData, onNet }) {
         <button
           type="button"
           onClick={onNet}
-          className="w-full flex items-center justify-between text-xs font-bold text-blue-700 hover:text-blue-900 transition-colors"
+          className="w-full flex items-center justify-between text-xs font-bold transition-colors text-blue-700 hover:text-blue-900"
         >
           <span>Trail Netting</span>
           <span aria-hidden="true">→</span>

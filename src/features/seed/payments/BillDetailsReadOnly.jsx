@@ -457,13 +457,15 @@ export default function BillDetailsReadOnly({
   if (!bill) return null;
 
   // ── Data extraction ───────────────────────────────────────────────────────
-  const cashPays = payments.filter((p) => p.method === 'cash' && p.type !== 'vehicle');
-  const advPays = payments.filter((p) => p.method === 'advance' && p.type !== 'vehicle');
+  const isSeedPayment = (p) => !p.type || p.type === 'seed' || p.type === 'seed_order';
+  const cashPays = payments.filter((p) => p.method === 'cash' && isSeedPayment(p));
+  const advPays = payments.filter((p) => p.method === 'advance' && isSeedPayment(p));
   const vanPlan = bill.van_plan;
   const stockingData = bill.stocking_status_data;
   const workersData = bill.outside_workers_data;
   const packingData = bill.packing_data;
   const outsideWorkerPayments = payments.filter((p) => p.type?.toLowerCase() === 'outside_worker' || p.type?.toLowerCase() === 'outside worker');
+  const unbatchedWorkerPayments = outsideWorkerPayments.filter(p => !p.batch_id);
 
   const isCompleted = bill.status === 'Completed' || bill.stocking_status === 'completed';
 
@@ -476,9 +478,14 @@ export default function BillDetailsReadOnly({
     return (
       <div className="bg-slate-50 min-h-full">
         {onBack && (
-          <div className="max-w-4xl mx-auto p-4 pb-0">
-            <button type="button" onClick={onBack} className="btn-primary text-xs px-4 py-2 font-bold flex items-center gap-1">
-              ← Back
+          <div className="max-w-4xl mx-auto p-4 pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1.5 text-sm font-bold text-slate-800 hover:text-black transition-colors self-start"
+            >
+              <span className="text-lg leading-none">←</span>
+              <span>Back</span>
             </button>
           </div>
         )}
@@ -1333,67 +1340,94 @@ export default function BillDetailsReadOnly({
             <div className="space-y-3">
               {workersData.batches && workersData.batches.length > 0 ? (
                 <div className="space-y-4">
-                  {workersData.batches.map((batch, idx) => (
-                    <div key={batch.batchId || idx} className="p-4 rounded-[12px] bg-slate-50 border space-y-3">
-                      <div className="flex justify-between items-start border-b pb-2">
-                        <h4 className="font-extrabold text-primary text-sm">Batch {idx + 1}</h4>
-                        <div className="text-right">
-                          <span className="text-xs font-bold text-slate-500">Supplier: {batch.supplierName || 'N/A'}</span>
-                          {batch.selectedTanks && batch.selectedTanks.length > 0 && (
-                            <p className="text-xs font-bold text-slate-500 mt-1">
-                              Tanks: {batch.selectedTanks.map(t => `${t.vehicleNumber || ''} - ${t.tankName || ''}`).join(', ')}
-                            </p>
-                          )}
+                  {workersData.batches.map((batch, idx) => {
+                    const batchPayments = outsideWorkerPayments.filter(p => p.batch_id === batch.batchId);
+                    return (
+                      <div key={batch.batchId || idx} className="p-4 rounded-[12px] bg-slate-50 border space-y-3">
+                        <div className="flex justify-between items-start border-b pb-2">
+                          <h4 className="font-extrabold text-primary text-sm">Batch {idx + 1}</h4>
+                          <div className="text-right">
+                            <span className="text-xs font-bold text-slate-500">Supplier: {batch.supplierName || 'N/A'}</span>
+                            {batch.selectedTanks && batch.selectedTanks.length > 0 && (
+                              <p className="text-xs font-bold text-slate-500 mt-1">
+                                Tanks: {batch.selectedTanks.map(t => `${t.vehicleNumber || ''} - ${t.tankName || ''}`).join(', ')}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <div className="overflow-x-auto rounded-[10px] border text-xs">
-                        <table className="w-full text-left border-collapse bg-white">
-                          <thead>
-                            <tr className="bg-slate-800 text-white">
-                              <th className="p-2 font-bold">Category</th>
-                              <th className="p-2 font-bold">Qty</th>
-                              <th className="p-2 font-bold">Amount</th>
-                              <th className="p-2 font-bold text-right">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {batch.workers?.filter(w => Number(w.quantity) > 0 || Number(w.amount) > 0).map((w) => (
-                              <tr key={w.sNo} className="border-b">
-                                <td className="p-2 font-semibold">{w.category}</td>
-                                <td className="p-2">{w.quantity || 0}</td>
-                                <td className="p-2">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
-                                <td className="p-2 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
+                        <div className="overflow-x-auto rounded-[10px] border text-xs">
+                          <table className="w-full text-left border-collapse bg-white">
+                            <thead>
+                              <tr className="bg-slate-800 text-white">
+                                <th className="p-2 font-bold">Category</th>
+                                <th className="p-2 font-bold">Qty</th>
+                                <th className="p-2 font-bold">Amount</th>
+                                <th className="p-2 font-bold text-right">Total</th>
                               </tr>
-                            ))}
-                          </tbody>
-                          <tfoot>
-                            <tr className="bg-slate-50">
-                              <td colSpan={3} className="p-2 text-right font-bold">Batch Total:</td>
-                              <td className="p-2 text-right font-extrabold text-success">
-                                ₹{Number(batch.grandTotal || 0).toLocaleString('en-IN')}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {batch.workers?.filter(w => Number(w.quantity) > 0 || Number(w.amount) > 0).map((w) => (
+                                <tr key={w.sNo} className="border-b">
+                                  <td className="p-2 font-semibold">{w.category}</td>
+                                  <td className="p-2">{w.quantity || 0}</td>
+                                  <td className="p-2">₹{Number(w.amount || 0).toLocaleString('en-IN')}</td>
+                                  <td className="p-2 text-right font-bold text-primary">₹{Number(w.total || 0).toLocaleString('en-IN')}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            <tfoot>
+                              <tr className="bg-slate-50">
+                                <td colSpan={3} className="p-2 text-right font-bold">Batch Total:</td>
+                                <td className="p-2 text-right font-extrabold text-success">
+                                  ₹{Number(batch.grandTotal || 0).toLocaleString('en-IN')}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                        {batch.remarks && (
+                          <div className="text-xs">
+                            <p className="font-bold text-text-muted">Remarks:</p>
+                            <p className="p-2 rounded-[8px] bg-white border italic">{batch.remarks}</p>
+                          </div>
+                        )}
+                        {batch.supervisorSignature && (
+                          <div className="pt-2">
+                            <p className="text-[10px] font-bold text-text-muted mb-1">Mestri / Supervisor Signature:</p>
+                            <img
+                              src={batch.supervisorSignature}
+                              alt="Supervisor Signature Workers"
+                              className="h-16 border rounded-[8px] bg-white p-1 max-w-xs"
+                            />
+                          </div>
+                        )}
+                        {batchPayments.length > 0 && (
+                          <div className="mt-3 bg-white p-3 rounded border border-slate-200">
+                            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Batch Payment History</p>
+                            <div className="space-y-2">
+                              {batchPayments.map((p, pIdx) => (
+                                <div key={pIdx} className="flex justify-between items-center border-b border-slate-200 pb-2 last:border-0 last:pb-0">
+                                  <span className="text-[11px] font-semibold text-slate-600">{new Date(p.created_at).toLocaleString()}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{p.method}</span>
+                                    {p.upi_id && <span className="text-[10px] font-mono font-bold text-slate-500">{p.upi_id}</span>}
+                                    {p.bank_account_id && <span className="text-[10px] font-mono font-bold text-slate-500">Bank Transfer</span>}
+                                    {p.payment_method_details?.photo && (
+                                      <PaymentEvidence value={p.payment_method_details.photo} kind="image" onOpenImage={setPreviewImage} className="flex items-center gap-1.5 px-2 py-1 bg-blue-900 text-white rounded-[8px] hover:bg-blue-800 transition shadow-sm cursor-pointer" />
+                                    )}
+                                    {p.payment_method_details?.voice && (
+                                      <PaymentEvidence value={p.payment_method_details.voice} kind="audio" className="h-7 max-w-[140px] rounded-full border border-slate-300 shadow-sm" />
+                                    )}
+                                    <span className="text-xs font-black text-emerald-600 ml-1">₹{Number(p.amount || 0).toLocaleString('en-IN')}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {batch.remarks && (
-                        <div className="text-xs">
-                          <p className="font-bold text-text-muted">Remarks:</p>
-                          <p className="p-2 rounded-[8px] bg-white border italic">{batch.remarks}</p>
-                        </div>
-                      )}
-                      {batch.supervisorSignature && (
-                        <div className="pt-2">
-                          <p className="text-[10px] font-bold text-text-muted mb-1">Mestri / Supervisor Signature:</p>
-                          <img
-                            src={batch.supervisorSignature}
-                            alt="Supervisor Signature Workers"
-                            className="h-16 border rounded-[8px] bg-white p-1 max-w-xs"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-[10px] border text-xs" style={{ borderColor: 'var(--color-border)' }}>
@@ -1439,11 +1473,11 @@ export default function BillDetailsReadOnly({
                 </div>
               )}
 
-              {outsideWorkerPayments.length > 0 && (
+              {unbatchedWorkerPayments.length > 0 && (
                 <div className="mt-3 bg-slate-50 p-3 rounded border border-slate-200">
                   <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Payment History</p>
                   <div className="space-y-2">
-                    {outsideWorkerPayments.map((p, idx) => (
+                    {unbatchedWorkerPayments.map((p, idx) => (
                       <div key={idx} className="flex justify-between items-center border-b border-slate-200 pb-2 last:border-0 last:pb-0">
                         <span className="text-[11px] font-semibold text-slate-600">{new Date(p.created_at).toLocaleString()}</span>
                         <div className="flex items-center gap-2">

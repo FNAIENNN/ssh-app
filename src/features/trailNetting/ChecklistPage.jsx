@@ -31,18 +31,29 @@ export default function ChecklistPage() {
       const { data: settings } = await supabase
         .from(TABLES.trailNettingSettings)
         .select('*')
-        .order('id');
+        .order('created_at', { ascending: true });
 
       let items = settings || [];
       if (!items.length) {
-        items = [
-          { id: 'tns-1', label: 'Net' },
-          { id: 'tns-2', label: 'Dettol' },
-          { id: 'tns-3', label: 'Box' },
-          { id: 'tns-4', label: 'Weighing Machine' },
-          { id: 'tns-5', label: 'Bucket' },
-          { id: 'tns-6', label: 'Rope' },
+        const defaults = [
+          { label: 'Net', required: true },
+          { label: 'Dettol', required: true },
+          { label: 'Box', required: true },
+          { label: 'Weighing Machine', required: true },
+          { label: 'Bucket', required: true },
+          { label: 'Rope', required: true },
         ];
+
+        const { data: inserted, error: insertError } = await supabase
+          .from(TABLES.trailNettingSettings)
+          .insert(defaults)
+          .select();
+
+        if (!insertError && inserted && inserted.length > 0) {
+          items = inserted;
+        } else {
+          items = defaults.map((d, i) => ({ id: `tns-${i}`, ...d }));
+        }
       }
       setChecklistItems(items);
 
@@ -92,7 +103,7 @@ export default function ChecklistPage() {
   if (loading) return <Spinner />;
   if (!tank) return <p className="p-6 text-text-muted">Tank not found.</p>;
 
-  const cadence = computeCadence({ startDate: tank.start_date });
+  const cadence = computeCadence({ startDate: tank.doc_reference_date || tank.start_date });
 
   return (
     <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-6">

@@ -228,7 +228,7 @@ export default function TrailNettingPaymentsPage() {
   };
 
   const handleDeleteRow = (id) => {
-    setBatchRows((prev) => prev.filter((r) => r.id !== id || r.isPermanent));
+    setBatchRows((prev) => prev.filter((r) => r.id !== id));
   };
 
   // Calculated totals for table rows
@@ -619,16 +619,14 @@ export default function TrailNettingPaymentsPage() {
                         ₹ {r.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td className="p-3 text-center">
-                        {!r.isPermanent && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRow(r.id)}
-                            className="text-slate-400 hover:text-rose-600 transition-colors"
-                            title="Delete Row"
-                          >
-                            🗑️
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteRow(r.id)}
+                          className="text-slate-400 hover:text-rose-600 transition-colors"
+                          title="Delete Row"
+                        >
+                          🗑️
+                        </button>
                       </td>
                     </tr>
                   ))}

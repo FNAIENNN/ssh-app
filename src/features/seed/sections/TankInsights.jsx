@@ -61,7 +61,7 @@ export default function TankInsights({ tank }) {
 
   if (!tank) return null;
 
-  const days = daysSinceStart(tank.start_date);
+  const days = daysSinceStart(tank.doc_reference_date || tank.start_date);
   const feedKgs = feedConsumptionFromReport(report);
   const count = piecesPerKgFromRecord(record);
 

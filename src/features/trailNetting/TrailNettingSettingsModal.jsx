@@ -10,20 +10,30 @@ export default function TrailNettingSettingsModal({ isOpen, onClose, onSettingsU
 
   const fetchItems = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from(TABLES.trailNettingSettings).select('*');
+    const { data, error } = await supabase.from(TABLES.trailNettingSettings).select('*').order('created_at', { ascending: true });
     if (data && data.length > 0) {
       setItems(data);
     } else {
       // Default fallback items if none in DB
       const defaults = [
-        { id: 'tns-1', label: 'Net' },
-        { id: 'tns-2', label: 'Dettol' },
-        { id: 'tns-3', label: 'Box' },
-        { id: 'tns-4', label: 'Weighing Machine' },
-        { id: 'tns-5', label: 'Bucket' },
-        { id: 'tns-6', label: 'Rope' },
+        { label: 'Net', required: true },
+        { label: 'Dettol', required: true },
+        { label: 'Box', required: true },
+        { label: 'Weighing Machine', required: true },
+        { label: 'Bucket', required: true },
+        { label: 'Rope', required: true },
       ];
-      setItems(defaults);
+
+      const { data: inserted, error: insertError } = await supabase
+        .from(TABLES.trailNettingSettings)
+        .insert(defaults)
+        .select();
+
+      if (!insertError && inserted && inserted.length > 0) {
+        setItems(inserted);
+      } else {
+        setItems(defaults.map((d, i) => ({ id: `tns-${i}`, ...d })));
+      }
     }
     setLoading(false);
   };
@@ -84,7 +94,7 @@ export default function TrailNettingSettingsModal({ isOpen, onClose, onSettingsU
             onChange={(e) => setNewItem(e.target.value)}
             className="field flex-1 text-sm"
           />
-          <button type="submit" className="btn-primary text-xs font-bold px-4">
+          <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white rounded-[10px] text-xs font-bold px-4 transition-colors shadow-sm">
             + Add Item
           </button>
         </form>
@@ -108,12 +118,6 @@ export default function TrailNettingSettingsModal({ isOpen, onClose, onSettingsU
               </button>
             </div>
           ))}
-        </div>
-
-        <div className="pt-2 flex justify-end">
-          <button onClick={onClose} className="btn-secondary text-xs">
-            Close
-          </button>
         </div>
       </div>
     </div>
