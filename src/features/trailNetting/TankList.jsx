@@ -234,46 +234,25 @@ export default function TankList() {
         });
         setReports(repMap);
 
-        // Active/pending tanks: completed Seed Order tanks that have NOT completed Trail Netting for the current cycle.
+        // Active/pending tanks: completed Seed Order tanks that are NOT fully harvested.
         const pending = stocked.filter((t) => {
-          // Exclude fully harvested tanks from Trail Netting
+          // Exclude fully harvested tanks from Trail Netting Active
           if (!t.start_date || (t.quantity !== null && Number(t.quantity) <= 0)) return false;
 
-          const report = repMap[t.id];
-          if (!report) return true; // No report ever — always pending
-          if (report.process_details?.status === 'draft') return true;
-
-          const reportTime = getReportTimestamp(report);
-          const tName = String(t.name || '').trim().toLowerCase();
-          const exactStockingTime = tankStockingTimes[tName];
-
-          if (exactStockingTime) {
-            return reportTime < exactStockingTime;
-          }
-
-          const startTime = new Date(t.start_date).getTime();
-          return reportTime < startTime;
+          // A tank remains Active throughout its current culture cycle, even after multiple
+          // completed Trail Netting sessions. It is only removed upon Full Harvest.
+          return true;
         });
 
-        // History tanks: tanks for which a Trail Netting Report was generated for the current cycle
+        // History tanks: tanks for which a Trail Netting Report was generated (any cycle)
         const completedRaw = combinedSiteTanks.filter((t) => {
-          // Exclude fully harvested tanks from Trail Netting
-          if (!t.start_date || (t.quantity !== null && Number(t.quantity) <= 0)) return false;
-
           const report = repMap[t.id];
           if (!report) return false;
           if (report.process_details?.status === 'draft') return false;
 
-          const reportTime = getReportTimestamp(report);
-          const tName = String(t.name || '').trim().toLowerCase();
-          const exactStockingTime = tankStockingTimes[tName];
-
-          if (exactStockingTime) {
-            return reportTime >= exactStockingTime;
-          }
-
-          const startTime = new Date(t.start_date).getTime();
-          return reportTime >= startTime;
+          // Keep all previous Trail Netting sessions available in History,
+          // regardless of current harvest status or cycle.
+          return true;
         });
 
         const completedGroups = new Map();
